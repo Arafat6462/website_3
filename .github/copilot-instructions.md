@@ -37,15 +37,25 @@ A **database-driven e-commerce backend** where:
 
 ### Technology Stack
 
-| Layer | Technology | Version |
-|-------|------------|---------|
-| Language | Python | 3.12+ |
-| Framework | Django | 5.1+ |
-| API | Django REST Framework | 3.15+ |
-| Database | PostgreSQL | 16+ |
-| Admin UI | Django Unfold | 0.40+ |
-| Container | Docker + Compose | Latest |
-| Server | Gunicorn + Nginx | Latest |
+| Layer | Technology | Version | Notes |
+|-------|------------|---------|-------|
+| Language | Python | 3.12.x | Pin minor version |
+| Framework | Django | 5.1.4 | Pin exact version |
+| API | Django REST Framework | 3.15.2 | Pin exact version |
+| Database | PostgreSQL | 16+ | Latest stable |
+| Admin UI | Django Unfold | **0.40.0** | ⚠️ MUST PIN - Breaking changes in 0.78+ |
+| Container | Docker + Compose | Latest | Use multi-stage builds |
+| Server | Gunicorn + Nginx | Latest | Non-root user in prod |
+| Cache | Redis | 7+ | For sessions & caching |
+
+> ⚠️ **CRITICAL VERSION WARNING - DJANGO UNFOLD:**
+> 
+> Django Unfold versions **0.78+** have **BREAKING CHANGES**:
+> 1. ALL navigation items MUST have `"items"` key (even empty array for non-collapsible)
+> 2. ALL collapsible sections MUST have `"icon"` key
+> 3. Dashboard callback MUST return `Dict[str, Any]` (context update), NOT list of widgets
+> 
+> **Always pin to `django-unfold==0.40.0`** or update Phase 18 config if using newer version.
 
 ---
 
@@ -1208,14 +1218,67 @@ NEXT: Phase [X+1] - [Name]
 **Goal:** Working Django in Docker with image storage configured
 
 **Create:**
-- `docker-compose.dev.yml` - Web + PostgreSQL services
-- `Dockerfile` - Python 3.12 base
-- `requirements/base.txt` - Core dependencies
+- `docker-compose.dev.yml` - Web + PostgreSQL + Redis services
+- `Dockerfile` - Python 3.12 base (multi-stage for prod)
+- `requirements/base.txt` - Core dependencies (PINNED versions)
 - `requirements/dev.txt` - Dev tools
 - `.env.example` - Environment template
-- `src/config/settings/` - Split settings
+- `src/config/settings/` - Split settings (base, dev, prod)
 - `src/config/urls.py` - Basic routing
 - `src/manage.py` - Django CLI
+
+**requirements/base.txt (EXACT versions - DO NOT use ranges):**
+```
+Django==5.1.4
+djangorestframework==3.15.2
+django-unfold==0.40.0
+django-filter==24.3
+Pillow==11.1.0
+psycopg2-binary==2.9.10
+python-decouple==3.8
+django-cors-headers==4.6.0
+djangorestframework-simplejwt==5.4.0
+django-storages[s3]==1.14.4
+boto3==1.36.14
+redis==5.2.1
+django-redis==5.4.0
+gunicorn==23.0.0
+whitenoise==6.8.2
+sentry-sdk==2.19.2
+django-structlog==8.1.0
+```
+
+**requirements/dev.txt:**
+```
+-r base.txt
+pytest==8.3.4
+pytest-django==4.9.0
+pytest-cov==6.0.0
+factory-boy==3.3.1
+Faker==33.1.0
+black==24.10.0
+isort==5.13.2
+flake8==7.1.1
+mypy==1.14.1
+django-stubs==5.1.1
+djangorestframework-stubs==3.15.1
+ipython==8.31.0
+django-debug-toolbar==4.4.6
+```
+
+**docker-compose.dev.yml services:**
+- `web` - Django app (port 8000)
+- `db` - PostgreSQL 16
+- `redis` - Redis 7 (sessions, cache)
+
+**Settings Structure:**
+```
+config/settings/
+├── __init__.py      # Loads from DJANGO_SETTINGS_MODULE
+├── base.py          # Shared settings + UNFOLD config
+├── dev.py           # DEBUG=True, local URLs
+└── prod.py          # Security hardening
+```
 
 **Image Storage Setup:**
 - Configure `django-storages` with S3-compatible backend
@@ -1499,38 +1562,374 @@ No additional database table needed.
 
 ---
 
-### Phase 14-17: REST API
+### Phase 14: API - Products
 
-**Goal:** Complete API
+**Goal:** Product catalog API endpoints
 
-**Create:** `src/api/v1/`
+**Create:** `src/api/v1/products/`
 
-- Products endpoints
-- Cart/Checkout endpoints
-- Users/Auth endpoints
-- Engagement endpoints
-- CMS endpoints
+**Files:**
+- `serializers.py` - Product, Variant, Category serializers
+- `views.py` - ProductViewSet, CategoryViewSet
+- `filters.py` - ProductFilter with price, category, attributes
+- `urls.py` - Router configuration
+
+**Endpoints:**
+| Method | Endpoint | Authentication | Description |
+|--------|----------|----------------|-------------|
+| GET | `/products/` | None | List products (paginated, filtered) |
+| GET | `/products/{slug}/` | None | Product detail with variants |
+| GET | `/products/featured/` | None | Featured products list |
+| GET | `/products/new/` | None | New arrivals |
+| GET | `/products/filters/` | None | Available filter options |
+| GET | `/categories/` | None | Category tree |
+| GET | `/categories/{slug}/` | None | Category with products |
+| GET | `/search/?q=` | None | Full-text search |
+
+**Serializer Requirements:**
+- ProductListSerializer: public_id, name, slug, primary_image, base_price, compare_price, is_featured, is_new
+- ProductDetailSerializer: + variants, attributes, images, reviews, category
+- VariantSerializer: public_id, sku, name, price, stock_quantity, attributes
+- CategorySerializer: id, name, slug, children (nested), product_count
+
+**Performance Requirements:**
+- Use `select_related('category', 'product_type')` for products
+- Use `prefetch_related('variants', 'images', 'attribute_values')` for detail view
+- Implement cursor-based pagination for large catalogs
+
+**Testing:** Test all endpoints with valid/invalid slugs, filters, and pagination
+
+---
+
+### Phase 15: API - Cart & Checkout
+
+**Goal:** Shopping cart and order creation API
+
+**Create:** `src/api/v1/orders/`
+
+**Files:**
+- `serializers.py` - Cart, CartItem, Order, Checkout serializers
+- `views.py` - CartViewSet, CheckoutView
+- `urls.py` - Router configuration
+
+**Endpoints:**
+| Method | Endpoint | Authentication | Description |
+|--------|----------|----------------|-------------|
+| GET | `/cart/` | Session/Token | Get current cart |
+| POST | `/cart/items/` | Session/Token | Add item to cart |
+| PATCH | `/cart/items/{id}/` | Session/Token | Update quantity |
+| DELETE | `/cart/items/{id}/` | Session/Token | Remove item |
+| POST | `/cart/clear/` | Session/Token | Clear cart |
+| POST | `/checkout/` | Optional | Create order |
+| POST | `/coupons/validate/` | Session/Token | Validate coupon |
+| GET | `/shipping/zones/` | None | List shipping zones |
+| POST | `/shipping/calculate/` | None | Calculate shipping cost |
+| POST | `/orders/track/` | None | Track order by number+phone |
+
+**Cart Identification Logic:**
+```python
+def get_cart(request):
+    if request.user.is_authenticated:
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+    else:
+        session_key = request.headers.get('X-Cart-Session') or request.session.session_key
+        cart, _ = Cart.objects.get_or_create(session_key=session_key, user=None)
+    return cart
+```
+
+**Checkout Validation:**
+- Validate stock availability for all items
+- Apply coupon if provided
+- Calculate shipping based on zone
+- Calculate tax based on rules
+- Create order with atomic transaction
+
+**Testing:** Test cart CRUD, checkout with/without auth, coupon application, stock validation
+
+---
+
+### Phase 16: API - Users & Auth
+
+**Goal:** Authentication and user profile API
+
+**Create:** `src/api/v1/users/`
+
+**Files:**
+- `serializers.py` - User, Address, Login, Register serializers
+- `views.py` - AuthViewSet, ProfileViewSet, AddressViewSet
+- `urls.py` - Router configuration
+
+**Endpoints:**
+| Method | Endpoint | Authentication | Description |
+|--------|----------|----------------|-------------|
+| POST | `/auth/register/` | None | Create account |
+| POST | `/auth/login/` | None | Login (returns JWT) |
+| POST | `/auth/logout/` | Token | Logout (blacklist token) |
+| POST | `/auth/refresh/` | Refresh Token | Refresh access token |
+| POST | `/auth/password-reset/` | None | Request password reset |
+| POST | `/auth/password-reset/confirm/` | None | Confirm with token |
+| GET | `/users/me/` | Token | Get profile |
+| PATCH | `/users/me/` | Token | Update profile |
+| POST | `/users/me/change-password/` | Token | Change password |
+| GET | `/users/me/addresses/` | Token | List addresses |
+| POST | `/users/me/addresses/` | Token | Add address |
+| PATCH | `/users/me/addresses/{id}/` | Token | Update address |
+| DELETE | `/users/me/addresses/{id}/` | Token | Delete address |
+| GET | `/users/me/orders/` | Token | User's order history |
+| GET | `/users/me/orders/{order_number}/` | Token | Order detail |
+
+**JWT Configuration (settings.py):**
+```python
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+}
+```
+
+**Cart Merge on Login:**
+```python
+def login(request):
+    # ... authenticate user
+    # Merge guest cart into user cart
+    guest_session = request.headers.get('X-Cart-Session')
+    if guest_session:
+        CartService.merge_carts(guest_session, user)
+    # Return tokens
+```
+
+**Testing:** Test registration, login, token refresh, password reset flow, profile CRUD
+
+---
+
+### Phase 17: API - CMS & Engagement
+
+**Goal:** Content and engagement API
+
+**Create:** `src/api/v1/cms/` and `src/api/v1/engagement/`
+
+**CMS Endpoints:**
+| Method | Endpoint | Authentication | Description |
+|--------|----------|----------------|-------------|
+| GET | `/pages/` | None | List published pages |
+| GET | `/pages/{slug}/` | None | Page content |
+| GET | `/banners/` | None | Active banners by position |
+| POST | `/contact/` | None | Submit contact form |
+| GET | `/settings/` | None | Public site settings |
+
+**Engagement Endpoints:**
+| Method | Endpoint | Authentication | Description |
+|--------|----------|----------------|-------------|
+| GET | `/reviews/products/{id}/` | None | Product reviews (approved only) |
+| POST | `/reviews/` | Token | Submit review |
+| GET | `/wishlist/` | Token | Get user's wishlist |
+| POST | `/wishlist/toggle/` | Token | Add/remove from wishlist |
+| POST | `/wishlist/move-to-cart/` | Token | Move item to cart |
+
+**Review Submission Rules:**
+- User must have purchased the product (check OrderItem)
+- One review per product per user
+- Auto-set is_approved=False (admin approves)
+
+**Testing:** Test page retrieval, banner filtering, contact submission, review creation, wishlist toggle
 
 ---
 
 ### Phase 18: Dashboard
 
-**Goal:** Admin dashboard
+**Goal:** Admin dashboard with Unfold integration
 
-**Add:**
-- Dashboard service
-- Unfold dashboard config
+**Create:** `src/apps/dashboard/`
+
+**Files:**
+- `__init__.py`
+- `apps.py` - App configuration
+- `views.py` - Dashboard callback function
+- `services.py` - Dashboard data aggregation
+
+**DashboardService Methods:**
+```python
+class DashboardService:
+    def get_today_stats(self) -> Dict[str, Any]:
+        """Orders count, revenue, new customers for today"""
+    
+    def get_recent_orders(self, limit: int = 10) -> QuerySet:
+        """Most recent orders with customer info"""
+    
+    def get_low_stock_alerts(self, limit: int = 10) -> QuerySet:
+        """Variants where stock <= low_stock_threshold"""
+    
+    def get_revenue_chart_data(self, days: int = 7) -> List[Dict]:
+        """Daily revenue for chart"""
+    
+    def get_order_status_breakdown(self) -> Dict[str, int]:
+        """Count of orders by status"""
+```
+
+**⚠️ CRITICAL: Dashboard Callback Function (views.py):**
+```python
+from typing import Any, Dict
+from django.http import HttpRequest
+from apps.dashboard.services import DashboardService
+
+def dashboard_callback(request: HttpRequest, context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Unfold dashboard callback.
+    
+    CRITICAL: Must return Dict[str, Any] - updates the context dict.
+    DO NOT return a list of widgets - that causes TypeError.
+    
+    Args:
+        request: The HTTP request object
+        context: The existing context dict from Unfold
+        
+    Returns:
+        Dict[str, Any]: Updated context dictionary (NOT a list!)
+    """
+    service = DashboardService()
+    
+    # Add dashboard data to context
+    context.update({
+        "stats": service.get_today_stats(),
+        "recent_orders": service.get_recent_orders(),
+        "low_stock_alerts": service.get_low_stock_alerts(),
+        "revenue_data": service.get_revenue_chart_data(),
+    })
+    
+    return context  # MUST return dict, NOT list
+```
+
+**⚠️ CRITICAL: Unfold Navigation Configuration (settings/base.py):**
+```python
+from django.urls import reverse_lazy
+from django.utils.translation import gettext_lazy as _
+
+UNFOLD = {
+    "SITE_TITLE": "E-Commerce Admin",
+    "SITE_HEADER": "E-Commerce",
+    "DASHBOARD_CALLBACK": "apps.dashboard.views.dashboard_callback",
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+        "navigation": [
+            # NON-COLLAPSIBLE ITEMS STILL NEED "items" KEY (empty array)
+            {
+                "title": _("Dashboard"),
+                "icon": "dashboard",
+                "link": reverse_lazy("admin:index"),
+                "items": [],  # REQUIRED even if empty!
+            },
+            # COLLAPSIBLE SECTIONS NEED BOTH "icon" AND "items"
+            {
+                "title": _("Catalog"),
+                "icon": "inventory_2",  # REQUIRED for collapsible
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": _("Products"),
+                        "icon": "shopping_bag",
+                        "link": reverse_lazy("admin:products_product_changelist"),
+                    },
+                    {
+                        "title": _("Categories"),
+                        "icon": "category",
+                        "link": reverse_lazy("admin:products_category_changelist"),
+                    },
+                    # ... more items
+                ],
+            },
+            {
+                "title": _("Sales"),
+                "icon": "shopping_cart",  # REQUIRED
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": _("Orders"),
+                        "icon": "receipt_long",
+                        "link": reverse_lazy("admin:orders_order_changelist"),
+                    },
+                    # ... more items
+                ],
+            },
+            # ... repeat pattern for all sections
+        ],
+    },
+}
+```
+
+**Navigation Structure Checklist:**
+- [ ] Dashboard has `"items": []`
+- [ ] All collapsible sections have `"icon"`
+- [ ] All sections have `"items"` array
+- [ ] All item links use `reverse_lazy()`
+- [ ] Icons use Material Symbols names (Google Fonts)
+
+**Common Unfold Errors & Solutions:**
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `KeyError: 'items'` | Missing items key | Add `"items": []` to ALL navigation entries |
+| `KeyError: 'icon'` | Missing icon on collapsible | Add `"icon": "icon_name"` to section |
+| `TypeError: context must be a dict` | Callback returns list | Return `context` dict, not widget list |
+| Icons not showing | Wrong icon name | Use Material Symbols names from Google Fonts |
+
+**Testing:** Verify admin loads without errors, navigation works, dashboard shows data
 
 ---
 
 ### Phase 19: Security
 
-**Goal:** Production security
+**Goal:** Production security hardening
 
-**Add:**
-- Rate limiting
-- Security settings
-- Admin URL obscuring
+**Create:** Security middleware and configurations
+
+**Files to Create/Update:**
+- `apps/core/middleware.py` - Security middleware
+- `config/settings/base.py` - Security settings update
+- `config/settings/prod.py` - Production-only security
+
+**Security Middleware:**
+```python
+class SecurityHeadersMiddleware:
+    """Add security headers to all responses."""
+    
+    def __call__(self, request):
+        response = self.get_response(request)
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['X-Frame-Options'] = 'DENY'
+        response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        return response
+
+class RateLimitMiddleware:
+    """Basic rate limiting for sensitive endpoints."""
+    pass
+```
+
+**Security Settings (prod.py):**
+```python
+# HTTPS
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+# Trusted origins
+CSRF_TRUSTED_ORIGINS = ['https://yourdomain.com']
+ALLOWED_HOSTS = ['yourdomain.com', 'www.yourdomain.com']
+
+# Admin URL (obscure)
+ADMIN_URL = os.environ.get('ADMIN_URL', 'secret-admin/')
+```
+
+**Rate Limiting Configuration:**
+- Login: 5 attempts per minute
+- Register: 3 attempts per minute
+- Password reset: 3 per hour
+- API general: 100 requests per minute (anonymous), 1000 per minute (authenticated)
+
+**Testing:** Run `python manage.py check --deploy` and verify all checks pass
 
 ---
 
@@ -1539,24 +1938,60 @@ No additional database table needed.
 **Goal:** Production ready with backup and performance optimization
 
 **Create:**
-- Production Dockerfile
-- Production docker-compose
-- Nginx config
-- Deploy scripts
+- `Dockerfile.prod` - Multi-stage production build with non-root user
+- `docker-compose.prod.yml` - Production orchestration (web, db, redis, nginx)
+- `nginx/nginx.conf` - Main nginx configuration
+- `nginx/conf.d/app.conf` - Application server config
+- `scripts/backup.sh` - Automated database backup
+- `scripts/deploy.sh` - Deployment automation
+- `scripts/validate_production.sh` - Pre-deployment checks
+- `.env.production.example` - Production environment template
+- `gunicorn.conf.py` - WSGI server configuration
+- `DEPLOYMENT.md` - Comprehensive deployment guide
+- `PRODUCTION_CHECKLIST.md` - Pre-deployment checklist
+
+**Dockerfile.prod Structure:**
+```dockerfile
+# Stage 1: Builder
+FROM python:3.12-slim as builder
+# Install build dependencies, pip install to wheels
+
+# Stage 2: Production
+FROM python:3.12-slim as production
+# Create non-root user
+RUN useradd --create-home appuser
+USER appuser
+# Copy wheels, install, copy app code
+```
+
+**Production docker-compose.prod.yml:**
+- `web` - Gunicorn + Django (internal only)
+- `db` - PostgreSQL 16 with persistent volume
+- `redis` - Redis 7 with persistence
+- `nginx` - Reverse proxy (public port 80/443)
+
+**Gunicorn Configuration:**
+```python
+workers = multiprocessing.cpu_count() * 2 + 1
+worker_class = "sync"
+bind = "0.0.0.0:8000"
+timeout = 120
+keepalive = 5
+max_requests = 1000
+max_requests_jitter = 50
+```
 
 **Monitoring:**
-- Sentry (Error Tracking)
-- Django Structlog (JSON Logging)
+- Sentry (Error Tracking) - Add to INSTALLED_APPS and configure DSN
+- Django Structlog (JSON Logging) - Structured logs for log aggregation
 
 **Backup Strategy:**
-```
-Daily Backup Script (backup.sh):
-1. pg_dump database → compressed SQL file
-2. Upload to Cloudflare R2 or DO Spaces (different bucket than images)
-3. Keep last 7 daily + 4 weekly backups
-4. Cron: 0 2 * * * /app/scripts/backup.sh
-
-Restore: psql database < backup.sql
+```bash
+# Daily Backup Script (backup.sh):
+# 1. pg_dump database → compressed SQL file
+# 2. Upload to Cloudflare R2 or DO Spaces (different bucket than images)
+# 3. Keep last 7 daily + 4 weekly backups
+# 4. Cron: 0 2 * * * /app/scripts/backup.sh
 ```
 
 **Database Indexes (add via migration):**
@@ -1621,6 +2056,145 @@ CREATE INDEX idx_cart_expires ON orders_cart(expires_at) WHERE user_id IS NULL;
 
 ---
 
+## PART 10: COMMON PITFALLS & SOLUTIONS
+
+### 10.1 Django Unfold Admin Issues
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| `KeyError: 'items'` at /admin/ | Missing `items` key in navigation | Add `"items": []` to ALL navigation items, even non-collapsible |
+| `KeyError: 'icon'` | Missing `icon` on collapsible section | Add `"icon": "icon_name"` to all collapsible sections |
+| `TypeError: context must be a dict` | Dashboard callback returns list | Return `context` dict after `context.update()`, NOT a list of widgets |
+| Admin 500 error on navigation | Unfold version mismatch | Pin to `django-unfold==0.40.0` exactly |
+| Sidebar icons not showing | Wrong icon name format | Use Material Symbols names from Google Fonts |
+| Navigation links not working | Wrong reverse_lazy path | Check model name: `admin:app_model_changelist` |
+
+### 10.2 Database Issues
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Migration conflicts | Multiple migrations touching same model | `python manage.py makemigrations --merge` |
+| Foreign key constraint error | Wrong deletion order | Use `on_delete=SET_NULL` or delete child first |
+| Unique constraint violation | Race condition on concurrent requests | Use `SELECT FOR UPDATE` in transaction |
+| "relation does not exist" | Migrations not applied | `python manage.py migrate` |
+| Circular import error | Models importing each other | Use string reference `'app.Model'` |
+
+### 10.3 Docker Issues
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Container can't connect to DB | Wrong host in settings | Use service name `db` not `localhost` |
+| Static files 404 | collectstatic not run | Add `python manage.py collectstatic --noinput` to entrypoint |
+| Permission denied on files | Root user file ownership | Use non-root user in production Dockerfile |
+| Port already in use | Previous container still running | `docker compose down` then `up` |
+| Volume mount not updating | Docker caching | `docker compose up --build --force-recreate` |
+
+### 10.4 API Issues
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| CSRF verification failed | Missing CSRF_TRUSTED_ORIGINS | Add domain to `CSRF_TRUSTED_ORIGINS` in settings |
+| CORS blocked | Missing CORS headers | Configure `django-cors-headers` properly |
+| JWT token invalid | Wrong secret or expired | Check `SECRET_KEY` consistency, token lifetime |
+| 401 on authenticated endpoints | Token not in header | Use `Authorization: Bearer <token>` header |
+| Serializer validation fails | Missing required fields | Check serializer `required` fields match input |
+
+### 10.5 Testing Issues
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Tests can't find models | Wrong app config | Check `INSTALLED_APPS` order and app names |
+| Database not created for tests | Wrong test settings | Use `--settings=config.settings.test` |
+| Factory fixtures failing | Missing required fields | Add all required fields to factory |
+| API tests return 403 | Missing authentication | Use `force_authenticate()` in API tests |
+
+---
+
+## PART 11: TROUBLESHOOTING GUIDE
+
+### Quick Diagnostics
+
+**Check if Django is running:**
+```bash
+docker compose exec web python manage.py check
+```
+
+**Check database connection:**
+```bash
+docker compose exec web python manage.py dbshell
+```
+
+**Check installed packages:**
+```bash
+docker compose exec web pip list | grep django
+```
+
+**Check Unfold version (IMPORTANT):**
+```bash
+docker compose exec web pip show django-unfold
+```
+
+**Dump current UNFOLD configuration:**
+```bash
+docker compose exec web python -c "from config.settings.base import UNFOLD; import json; print(json.dumps(UNFOLD['SIDEBAR']['navigation'], indent=2))"
+```
+
+### Common Error Messages
+
+**"ModuleNotFoundError: No module named 'apps'"**
+- **Cause:** `src/` not in Python path
+- **Solution:** Check `sys.path.insert(0, BASE_DIR)` in manage.py or wsgi.py
+
+**"relation does not exist"**
+- **Cause:** Migrations not applied
+- **Solution:** `python manage.py migrate`
+
+**"CSRF verification failed"**
+- **Cause:** Domain not in trusted origins
+- **Solution:** Add to `CSRF_TRUSTED_ORIGINS = ['https://yourdomain.com']`
+
+**"Admin panel shows raw HTML"**
+- **Cause:** Static files not collected
+- **Solution:** `python manage.py collectstatic --noinput`
+
+**"connection refused to localhost:5432"**
+- **Cause:** Using localhost instead of service name
+- **Solution:** Change to `db` in DATABASE_HOST
+
+### Health Check Endpoint
+
+Always implement a comprehensive health check:
+```python
+def health_check(request):
+    """Check all critical components."""
+    components = {}
+    
+    # Database
+    try:
+        connection.ensure_connection()
+        components["database"] = "healthy"
+    except Exception as e:
+        components["database"] = f"unhealthy: {str(e)}"
+    
+    # Cache (Redis)
+    try:
+        cache.set("health_check", "ok", 10)
+        cache.get("health_check")
+        components["cache"] = "healthy"
+    except Exception as e:
+        components["cache"] = f"unhealthy: {str(e)}"
+    
+    all_healthy = all("healthy" in str(v) for v in components.values())
+    status_code = 200 if all_healthy else 503
+    
+    return JsonResponse({
+        "status": "healthy" if all_healthy else "unhealthy",
+        "components": components
+    }, status=status_code)
+```
+
+---
+
 ## HOW TO USE
 
 **For AI:**
@@ -1642,6 +2216,13 @@ CREATE INDEX idx_cart_expires ON orders_cart(expires_at) WHERE user_id IS NULL;
 2. Provide last anchor
 3. AI resumes
 
+**If Error Encountered:**
+1. Check PART 10 (Common Pitfalls) first
+2. Check PART 11 (Troubleshooting) for diagnostics
+3. Verify package versions match this document
+
 ---
 
-> **Version:** 2.1 | **Phases:** 20 | **No hardcoded solutions**
+> **Version:** 3.0 | **Phases:** 20 | **Battle-Tested Build Instructions**
+> 
+> *This document has been validated through complete implementation. All pitfalls and solutions are based on actual build experience.*
