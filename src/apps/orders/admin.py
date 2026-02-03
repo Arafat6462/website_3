@@ -1,5 +1,5 @@
 """
-Orders Application Admin Configuration - Phase 7: Cart.
+Orders Application Admin Configuration - Phase 7: Cart, Phase 8: Coupons.
 """
 
 from typing import Any
@@ -10,7 +10,7 @@ from django.http import HttpRequest
 from django.utils.html import format_html
 
 from apps.core.admin import BaseModelAdmin, TimeStampedAdminMixin
-from apps.orders.models import Cart, CartItem
+from apps.orders.models import Cart, CartItem, Coupon, CouponUsage
 
 
 class CartItemInline(admin.TabularInline):
@@ -213,3 +213,344 @@ class CartItemAdmin(TimeStampedAdminMixin, BaseModelAdmin):
     def line_total_display(self, obj: CartItem) -> str:
         """Display line total."""
         return format_html("<strong>৳{:.2f}</strong>", obj.line_total)
+
+
+class CouponUsageInline(admin.TabularInline):
+    """
+    Inline admin for coupon usage.
+
+    Shows usage history directly in coupon admin.
+    """
+
+    model = CouponUsage
+    extra = 0
+    fields = ["user", "guest_identifier", "discount_amount", "created_at"]
+    readonly_fields = ["user", "guest_identifier", "discount_amount", "created_at"]
+    can_delete = False
+
+    def has_add_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        """Disable manual addition."""
+        return False
+
+
+@admin.register(Coupon)
+class CouponAdmin(TimeStampedAdminMixin, BaseModelAdmin):
+    """
+    Admin interface for Coupon model.
+
+    Features:
+    - Create/edit coupons
+    - View usage statistics
+    - Filter by status, type, validity
+    - Quick activate/deactivate
+    - View usage history inline
+    """
+
+    list_display = [
+        "code",
+        "name",
+        "discount_badge",
+        "usage_display",
+        "validity_badge",
+        "status_badge",
+        "created_at",
+    ]
+    list_filter = [
+        "discount_type",
+        "is_active",
+        "first_order_only",
+        "created_at",
+        "valid_from",
+        "valid_to",
+    ]
+    search_fields = ["code", "name", "description"]
+    readonly_fields = [
+        "times_used",
+        "usage_display",
+        "usage_remaining_display",
+        "created_at",
+        "updated_at",
+    ]
+    fieldsets = [
+        (
+            "Basic Information",
+            {
+                "fields": [
+                    "code",
+                    "name",
+                    "description",
+                    "is_active",
+                ]
+            },
+        ),
+        (
+            "Discount Configuration",
+            {
+                "fields": [
+                    "discount_type",
+                    "discount_value",
+                    "minimum_order",
+                    "maximum_discount",
+                ]
+            },
+        ),
+        (
+            "Usage Limits",
+            {
+                "fields": [
+                    "usage_limit",
+                    "usage_limit_per_user",
+                    "times_used",
+                    "usage_remaining_display",
+                ]
+            },
+        ),
+        (
+            "Validity Period",
+            {
+                "fields": [
+                    "valid_from",
+                    "valid_to",
+                ]
+            },
+        ),
+        (
+            "Restrictions",
+            {
+                "fields": [
+                    "first_order_only",
+                    "applicable_categories",
+                    "applicable_products",
+                ],
+                "classes": ["collapse"],
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": ["created_at", "updated_at"],
+                "classes": ["collapse"],
+            },
+        ),
+    ]
+    inlines = [CouponUsageInline]
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """Include soft-deleted coupons."""
+        return Coupon.all_objects.all()
+
+    @admin.display(description="Discount")
+    def discount_badge(self, obj: Coupon) -> str:
+        """Display discount value."""
+        if obj.discount_type == "percentage":
+            return format_html(
+                '<span style="background-color: #007bff; color: white; '
+                'padding: 3px 10px; border-radius: 3px; font-weight: bold;">'
+                '{}% OFF</span>',
+                obj.discount_value,
+            )
+        else:
+            return format_html(
+                '<span style="background-color: #28a745; color: white; '
+                'padding: 3px 10px; border-radius: 3px; font-weight: bold;">'
+                '৳{} OFF</span>',
+                obj.discount_value,
+            )
+
+    @admin.display(description="Usage")
+    def usage_display(self, obj: Coupon) -> str:
+        """Display usage count."""
+        if obj.usage_limit is None:
+            return format_html(
+                '<span style="color: green;">{} / Unlimited</span>',
+                obj.times_used,
+            )
+        
+        percentage = (obj.times_used / obj.usage_limit * 100) if obj.usage_limit > 0 else 0
+        color = "#dc3545" if percentage >= 90 else "#ffc107" if percentage >= 70 else "#28a745"
+        
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{} / {}</span>',
+            color,
+            obj.times_used,
+            obj.usage_limit,
+        )
+
+    @admin.display(description="Usage Remaining")
+    def usage_remaining_display(self, obj: Coupon) -> str:
+        """Display remaining uses."""
+        if obj.usage_limit is None:
+            return format_html('<span style="color: green;">Unlimited</span>')
+        
+        remaining = obj.usage_remaining
+        if remaining == 0:
+            return format_html('<span style="color: red; font-weight: bold;">Exhausted</span>')
+        
+        return format_html('<span style="color: green;">{} remaining</span>', remaining)
+
+    @admin.display(description="Validity")
+    def validity_badge(self, obj: Coupon) -> str:
+        """Display validity status."""
+        from django.utils import timezone
+
+        now = timezone.now()
+        
+        if now < obj.valid_from:
+            days_until = (obj.valid_from - now).days
+            return format_html(
+                '<span style="background-color: #6c757d; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">Starts in {} days</span>',
+                days_until,
+            )
+        elif now > obj.valid_to:
+            return format_html(
+                '<span style="background-color: #dc3545; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">Expired</span>'
+            )
+        else:
+            days_left = (obj.valid_to - now).days
+            color = "#ffc107" if days_left < 7 else "#28a745"
+            return format_html(
+                '<span style="background-color: {}; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">{} days left</span>',
+                color,
+                days_left,
+            )
+
+    @admin.display(description="Status")
+    def status_badge(self, obj: Coupon) -> str:
+        """Display status badge."""
+        if obj.is_deleted:
+            return format_html(
+                '<span style="background-color: #dc3545; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">Deleted</span>'
+            )
+        elif not obj.is_active:
+            return format_html(
+                '<span style="background-color: #6c757d; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">Inactive</span>'
+            )
+        elif obj.is_exhausted:
+            return format_html(
+                '<span style="background-color: #ffc107; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">Exhausted</span>'
+            )
+        else:
+            return format_html(
+                '<span style="background-color: #28a745; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">Active</span>'
+            )
+
+    @admin.action(description="Activate selected coupons")
+    def activate_coupons(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Activate selected coupons."""
+        count = queryset.update(is_active=True)
+        self.message_user(request, f"Activated {count} coupons.")
+
+    @admin.action(description="Deactivate selected coupons")
+    def deactivate_coupons(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Deactivate selected coupons."""
+        count = queryset.update(is_active=False)
+        self.message_user(request, f"Deactivated {count} coupons.")
+
+    @admin.action(description="Soft delete selected coupons")
+    def soft_delete_coupons(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Soft delete selected coupons."""
+        count = 0
+        for coupon in queryset:
+            if not coupon.is_deleted:
+                coupon.delete()
+                count += 1
+        self.message_user(request, f"Deleted {count} coupons.")
+
+    actions = ["activate_coupons", "deactivate_coupons", "soft_delete_coupons"]
+
+
+@admin.register(CouponUsage)
+class CouponUsageAdmin(BaseModelAdmin):
+    """
+    Admin interface for CouponUsage model.
+
+    Read-only view of all coupon usage history.
+    """
+
+    list_display = [
+        "coupon_code",
+        "user_display",
+        "discount_amount_display",
+        # "order_link",  # Will be added in Phase 10
+        "created_at",
+    ]
+    list_filter = [
+        "created_at",
+        "coupon__discount_type",
+    ]
+    search_fields = [
+        "coupon__code",
+        "user__email",
+        "guest_identifier",
+    ]
+    readonly_fields = [
+        "coupon",
+        "user",
+        # "order",  # Will be added in Phase 10
+        "guest_identifier",
+        "discount_amount",
+        "created_at",
+    ]
+    autocomplete_fields = []
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Disable manual addition."""
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: Any = None
+    ) -> bool:
+        """Disable deletion."""
+        return False
+
+    @admin.display(description="Coupon")
+    def coupon_code(self, obj: CouponUsage) -> str:
+        """Display coupon code."""
+        return format_html(
+            '<a href="/admin/orders/coupon/{}/change/"><strong>{}</strong></a>',
+            obj.coupon.pk,
+            obj.coupon.code,
+        )
+
+    @admin.display(description="User")
+    def user_display(self, obj: CouponUsage) -> str:
+        """Display user or guest."""
+        if obj.user:
+            return format_html(
+                '<a href="/admin/users/user/{}/change/">{}</a>',
+                obj.user.pk,
+                obj.user.email,
+            )
+        return format_html(
+            '<span style="color: gray;">Guest: {}</span>',
+            obj.guest_identifier or "Unknown",
+        )
+
+    @admin.display(description="Discount")
+    def discount_amount_display(self, obj: CouponUsage) -> str:
+        """Display discount amount."""
+        return format_html(
+            '<strong style="color: green;">৳{:.2f}</strong>',
+            obj.discount_amount,
+        )
+
+    # order_link method will be added in Phase 10 when Order model exists
+    # @admin.display(description="Order")
+    # def order_link(self, obj: CouponUsage) -> str:
+    #     """Display order link."""
+    #     if obj.order:
+    #         return format_html(
+    #             '<a href="/admin/orders/order/{}/change/">{}</a>',
+    #             obj.order.pk,
+    #             obj.order.order_number,
+    #         )
+    #     return format_html('<span style="color: gray;">Pending</span>')
+
+

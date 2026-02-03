@@ -382,3 +382,266 @@ class CartService:
         count = expired.count()
         expired.delete()
         return count
+
+
+class CouponService:
+    """
+    Service for managing coupon validation and discount calculations.
+
+    Handles:
+    - Coupon validation (eligibility, expiry, limits)
+    - Discount calculation (percentage/fixed)
+    - Usage tracking
+    - Product/category restrictions
+
+    All discount calculations respect minimum order and maximum discount limits.
+
+    Usage:
+        # Validate coupon
+        result = CouponService.validate_coupon('SAVE10', user, cart)
+        if not result['valid']:
+            print(result['errors'])
+        
+        # Calculate discount
+        discount = CouponService.calculate_discount(coupon, cart)
+        
+        # Apply coupon (track usage)
+        usage = CouponService.apply_coupon(coupon, cart, user, discount)
+    """
+
+    @staticmethod
+    def validate_coupon(
+        code: str,
+        cart: Cart,
+        user: Any | None = None,
+        guest_identifier: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Validate if coupon can be applied to cart.
+
+        Args:
+            code: Coupon code to validate
+            cart: Shopping cart
+            user: User applying coupon (None for guest)
+            guest_identifier: Email/phone for guest users
+
+        Returns:
+            Dictionary with 'valid' (bool), 'errors' (list), 'coupon' (Coupon | None)
+
+        Validation checks:
+            - Coupon exists and is active
+            - Within validity period
+            - Not exceeded usage limit
+            - Not exceeded per-user limit
+            - Cart meets minimum order amount
+            - First order only restriction (if applicable)
+            - Product/category restrictions (if applicable)
+
+        Example:
+            result = CouponService.validate_coupon('SAVE10', cart, user=user)
+            if result['valid']:
+                coupon = result['coupon']
+                discount = CouponService.calculate_discount(coupon, cart)
+        """
+        from apps.orders.models import Coupon, CouponUsage
+
+        errors = []
+
+        # Check coupon exists
+        try:
+            coupon = Coupon.objects.get(code=code.upper(), is_deleted=False)
+        except Coupon.DoesNotExist:
+            return {"valid": False, "errors": ["Invalid coupon code"], "coupon": None}
+
+        # Check active status
+        if not coupon.is_active:
+            errors.append("This coupon is not active")
+
+        # Check validity period
+        if not coupon.is_valid:
+            errors.append("This coupon has expired or is not yet valid")
+
+        # Check global usage limit
+        if coupon.is_exhausted:
+            errors.append("This coupon has reached its usage limit")
+
+        # Check per-user usage limit
+        if coupon.usage_limit_per_user is not None:
+            if user:
+                user_usage_count = CouponUsage.objects.filter(
+                    coupon=coupon, user=user
+                ).count()
+            elif guest_identifier:
+                user_usage_count = CouponUsage.objects.filter(
+                    coupon=coupon, guest_identifier=guest_identifier
+                ).count()
+            else:
+                user_usage_count = 0
+
+            if user_usage_count >= coupon.usage_limit_per_user:
+                errors.append(
+                    f"You have already used this coupon {coupon.usage_limit_per_user} time(s)"
+                )
+
+        # Check minimum order amount
+        cart_subtotal = cart.subtotal
+        if cart_subtotal < coupon.minimum_order:
+            errors.append(
+                f"Minimum order amount of ৳{coupon.minimum_order} required (current: ৳{cart_subtotal})"
+            )
+
+        # Check first order only restriction
+        if coupon.first_order_only and user:
+            # Will be checked against Order model in Phase 10
+            # For now, skip this check
+            pass
+
+        # Check product/category restrictions
+        if coupon.applicable_categories or coupon.applicable_products:
+            eligible_items = CouponService._get_eligible_items(cart, coupon)
+            if not eligible_items:
+                errors.append(
+                    "This coupon is not applicable to items in your cart"
+                )
+
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "coupon": coupon if len(errors) == 0 else None,
+        }
+
+    @staticmethod
+    def calculate_discount(coupon: Any, cart: Cart) -> float:
+        """
+        Calculate discount amount for cart.
+
+        Args:
+            coupon: Coupon to apply
+            cart: Shopping cart
+
+        Returns:
+            Discount amount (float)
+
+        Calculation:
+            - Percentage: (subtotal * percentage / 100), capped by maximum_discount
+            - Fixed: Fixed amount, not exceeding subtotal
+            - Respects product/category restrictions
+
+        Example:
+            coupon = Coupon.objects.get(code='SAVE10')
+            discount = CouponService.calculate_discount(coupon, cart)
+            final_total = cart.subtotal - discount
+        """
+        from decimal import Decimal
+
+        # Get eligible items (if restrictions apply)
+        if coupon.applicable_categories or coupon.applicable_products:
+            eligible_items = CouponService._get_eligible_items(cart, coupon)
+            eligible_subtotal = sum(item.line_total for item in eligible_items)
+        else:
+            eligible_subtotal = float(cart.subtotal)
+
+        # Calculate discount based on type
+        if coupon.discount_type == "percentage":
+            discount = eligible_subtotal * (float(coupon.discount_value) / 100)
+
+            # Apply maximum discount cap
+            if coupon.maximum_discount:
+                discount = min(discount, float(coupon.maximum_discount))
+        else:  # fixed
+            discount = float(coupon.discount_value)
+
+        # Ensure discount doesn't exceed cart subtotal
+        discount = min(discount, eligible_subtotal)
+
+        return round(discount, 2)
+
+    @staticmethod
+    @transaction.atomic
+    def apply_coupon(
+        coupon: Any,
+        cart: Cart,
+        user: Any | None = None,
+        guest_identifier: str | None = None,
+        discount_amount: float | None = None,
+    ) -> Any:
+        """
+        Apply coupon and track usage.
+
+        This should be called when order is created (Phase 10).
+        For now, it just creates a usage record.
+
+        Args:
+            coupon: Coupon to apply
+            cart: Shopping cart
+            user: User applying coupon
+            guest_identifier: Email/phone for guests
+            discount_amount: Calculated discount (if None, auto-calculate)
+
+        Returns:
+            CouponUsage instance
+
+        Side effects:
+            - Increments coupon.times_used
+            - Creates CouponUsage record
+
+        Example:
+            usage = CouponService.apply_coupon(
+                coupon, cart, user=user, discount_amount=50.00
+            )
+        """
+        from apps.orders.models import CouponUsage
+
+        if discount_amount is None:
+            discount_amount = CouponService.calculate_discount(coupon, cart)
+
+        # Create usage record
+        usage = CouponUsage.objects.create(
+            coupon=coupon,
+            user=user,
+            guest_identifier=guest_identifier or "",
+            discount_amount=discount_amount,
+        )
+
+        # Increment usage counter
+        coupon.times_used += 1
+        coupon.save(update_fields=["times_used", "updated_at"])
+
+        return usage
+
+    @staticmethod
+    def _get_eligible_items(cart: Cart, coupon: Any) -> list[Any]:
+        """
+        Get cart items eligible for coupon discount.
+
+        Args:
+            cart: Shopping cart
+            coupon: Coupon with restrictions
+
+        Returns:
+            List of eligible CartItem instances
+
+        Filters items based on:
+            - applicable_categories: Product category IDs
+            - applicable_products: Product IDs
+        """
+        eligible_items = []
+
+        for item in cart.items.select_related("variant__product"):
+            product = item.variant.product
+            category_id = product.category_id
+
+            # Check category restriction
+            if coupon.applicable_categories:
+                if category_id not in coupon.applicable_categories:
+                    continue
+
+            # Check product restriction
+            if coupon.applicable_products:
+                if product.id not in coupon.applicable_products:
+                    continue
+
+            eligible_items.append(item)
+
+        return eligible_items
+
