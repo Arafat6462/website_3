@@ -372,10 +372,12 @@ UNFOLD = {
                 "separator": False,
                 "icon": "dashboard",
                 "link": "/admin/",
+                "items": [],
             },
             {
                 "title": "Catalog",
                 "separator": True,
+                "icon": "inventory_2",
                 "collapsible": True,
                 "items": [
                     {
@@ -403,6 +405,7 @@ UNFOLD = {
             {
                 "title": "Sales",
                 "separator": True,
+                "icon": "point_of_sale",
                 "collapsible": True,
                 "items": [
                     {
@@ -420,11 +423,12 @@ UNFOLD = {
             {
                 "title": "Customers",
                 "separator": True,
+                "icon": "people",
                 "collapsible": True,
                 "items": [
                     {
                         "title": "Users",
-                        "icon": "people",
+                        "icon": "person",
                         "link": "/admin/users/user/",
                     },
                     {
@@ -437,6 +441,7 @@ UNFOLD = {
             {
                 "title": "Engagement",
                 "separator": True,
+                "icon": "favorite_border",
                 "collapsible": True,
                 "items": [
                     {
@@ -454,6 +459,7 @@ UNFOLD = {
             {
                 "title": "Content",
                 "separator": True,
+                "icon": "web",
                 "collapsible": True,
                 "items": [
                     {
@@ -476,11 +482,12 @@ UNFOLD = {
             {
                 "title": "Settings",
                 "separator": True,
+                "icon": "settings",
                 "collapsible": True,
                 "items": [
                     {
                         "title": "Site Settings",
-                        "icon": "settings",
+                        "icon": "tune",
                         "link": "/admin/cms/sitesettings/",
                     },
                 ],

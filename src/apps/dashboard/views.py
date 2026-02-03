@@ -5,28 +5,27 @@ This module provides custom dashboard views and callbacks for the
 Django Unfold admin interface, displaying key metrics and statistics.
 """
 
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
-from django.shortcuts import render
 
 from .services import DashboardService
 
 
-def dashboard_callback(request, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+def dashboard_callback(request, context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Dashboard callback for Django Unfold admin.
     
     This function is called by Unfold to render dashboard widgets.
-    Returns a list of widget configurations with data.
+    Updates the context with dashboard data.
     
     Args:
         request: HTTP request object
         context: Context dictionary from admin
         
     Returns:
-        list: List of widget dictionaries for rendering
+        dict: Updated context dictionary with dashboard data
     """
     # Get statistics
     today_stats = DashboardService.get_today_stats()
@@ -35,103 +34,18 @@ def dashboard_callback(request, context: Dict[str, Any]) -> List[Dict[str, Any]]
     low_stock = DashboardService.get_low_stock_alerts(limit=5)
     recent_orders = DashboardService.get_recent_orders(limit=5)
     
-    widgets = []
-    
-    # Row 1: Key Metrics Cards
-    widgets.append({
-        "type": "metric",
-        "title": "Today's Orders",
-        "value": today_stats['orders_count'],
-        "change": today_stats['orders_change'],
-        "icon": "shopping_bag",
-        "color": "primary",
+    # Add dashboard data to context
+    context.update({
+        'dashboard_stats': {
+            'today': today_stats,
+            'abandoned_carts': abandoned_carts,
+            'revenue_chart': revenue_chart,
+            'low_stock': low_stock,
+            'recent_orders': recent_orders,
+        }
     })
     
-    widgets.append({
-        "type": "metric",
-        "title": "Today's Revenue",
-        "value": f"৳{today_stats['revenue']:,.2f}",
-        "change": today_stats['revenue_change'],
-        "icon": "payments",
-        "color": "success",
-    })
-    
-    widgets.append({
-        "type": "metric",
-        "title": "New Customers",
-        "value": today_stats['new_customers'],
-        "change": today_stats['customers_change'],
-        "icon": "person_add",
-        "color": "info",
-    })
-    
-    widgets.append({
-        "type": "metric",
-        "title": "Pending Reviews",
-        "value": today_stats['pending_reviews'],
-        "icon": "rate_review",
-        "color": "warning",
-    })
-    
-    # Row 2: Charts and Lists
-    widgets.append({
-        "type": "chart",
-        "title": "Revenue (Last 7 Days)",
-        "chart_type": "bar",
-        "data": {
-            "labels": revenue_chart['labels'],
-            "datasets": [{
-                "label": "Revenue",
-                "data": revenue_chart['data'],
-            }],
-        },
-        "width": 8,  # 2/3 width
-    })
-    
-    widgets.append({
-        "type": "list",
-        "title": "Low Stock Alerts",
-        "items": [
-            {
-                "title": item['variant_name'],
-                "subtitle": f"Stock: {item['stock_quantity']} (SKU: {item['sku']})",
-                "badge": "⚠️" if item['stock_quantity'] == 0 else "📦",
-            }
-            for item in low_stock
-        ],
-        "width": 4,  # 1/3 width
-    })
-    
-    # Row 3: Recent Orders Table
-    widgets.append({
-        "type": "table",
-        "title": "Recent Orders",
-        "headers": ["Order #", "Customer", "Phone", "Status", "Amount"],
-        "rows": [
-            [
-                order['order_number'],
-                order['customer_name'],
-                order['customer_phone'],
-                order['status'].title(),
-                f"৳{order['total']:,.2f}",
-            ]
-            for order in recent_orders
-        ],
-        "width": 12,  # Full width
-    })
-    
-    # Row 4: Abandoned Carts
-    widgets.append({
-        "type": "metric",
-        "title": "Abandoned Carts",
-        "value": abandoned_carts['count'],
-        "subtitle": f"Potential Revenue: ৳{abandoned_carts['potential_revenue']:,.2f}",
-        "icon": "remove_shopping_cart",
-        "color": "error",
-        "width": 6,
-    })
-    
-    return widgets
+    return context
 
 
 @staff_member_required
@@ -214,3 +128,4 @@ def analytics_view(request):
             for p in top_products
         ],
     })
+
