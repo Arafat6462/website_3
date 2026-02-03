@@ -104,6 +104,8 @@ LOCAL_APPS = [
     "apps.notifications",
     # CMS app - pages, banners, settings
     "apps.cms",
+    # Dashboard app - admin analytics
+    "apps.dashboard",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -347,13 +349,132 @@ UNFOLD = {
     "SITE_SYMBOL": "shopping_cart",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": True,
+    "DASHBOARD_CALLBACK": "apps.dashboard.views.dashboard_callback",
     "SIDEBAR": {
         "show_search": True,
         "show_all_applications": True,
         "navigation": [
-            # Navigation will be configured as we add apps
+            {
+                "title": "Dashboard",
+                "separator": False,
+                "icon": "dashboard",
+                "link": "/admin/",
+            },
+            {
+                "title": "Catalog",
+                "separator": True,
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": "Products",
+                        "icon": "inventory",
+                        "link": "/admin/products/product/",
+                    },
+                    {
+                        "title": "Categories",
+                        "icon": "category",
+                        "link": "/admin/products/category/",
+                    },
+                    {
+                        "title": "Product Types",
+                        "icon": "style",
+                        "link": "/admin/products/producttype/",
+                    },
+                    {
+                        "title": "Attributes",
+                        "icon": "label",
+                        "link": "/admin/products/attribute/",
+                    },
+                ],
+            },
+            {
+                "title": "Sales",
+                "separator": True,
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": "Orders",
+                        "icon": "shopping_bag",
+                        "link": "/admin/orders/order/",
+                    },
+                    {
+                        "title": "Carts",
+                        "icon": "shopping_cart",
+                        "link": "/admin/orders/cart/",
+                    },
+                ],
+            },
+            {
+                "title": "Customers",
+                "separator": True,
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": "Users",
+                        "icon": "people",
+                        "link": "/admin/users/user/",
+                    },
+                    {
+                        "title": "Addresses",
+                        "icon": "location_on",
+                        "link": "/admin/users/customeraddress/",
+                    },
+                ],
+            },
+            {
+                "title": "Engagement",
+                "separator": True,
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": "Reviews",
+                        "icon": "star",
+                        "link": "/admin/engagement/productreview/",
+                    },
+                    {
+                        "title": "Wishlists",
+                        "icon": "favorite",
+                        "link": "/admin/engagement/wishlist/",
+                    },
+                ],
+            },
+            {
+                "title": "Content",
+                "separator": True,
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": "Pages",
+                        "icon": "article",
+                        "link": "/admin/cms/page/",
+                    },
+                    {
+                        "title": "Banners",
+                        "icon": "image",
+                        "link": "/admin/cms/banner/",
+                    },
+                    {
+                        "title": "Contact Messages",
+                        "icon": "mail",
+                        "link": "/admin/cms/contactsubmission/",
+                    },
+                ],
+            },
+            {
+                "title": "Settings",
+                "separator": True,
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": "Site Settings",
+                        "icon": "settings",
+                        "link": "/admin/cms/sitesettings/",
+                    },
+                ],
+            },
         ],
     },
+
 }
 
 # =============================================================================

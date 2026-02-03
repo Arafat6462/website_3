@@ -58,6 +58,9 @@ urlpatterns = [
     # Admin site (using Unfold)
     path("admin/", admin.site.urls),
     
+    # Dashboard AJAX endpoints (staff only)
+    path("dashboard/", include("apps.dashboard.urls")),
+    
     # API version 1
     path("api/v1/", include((api_v1_patterns, "api-v1"))),
 ]
