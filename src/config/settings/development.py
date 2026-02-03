@@ -63,6 +63,7 @@ INTERNAL_IPS += [".".join(ip.split(".")[:-1] + ["1"]) for ip in ips]
 
 DEBUG_TOOLBAR_CONFIG = {
     "SHOW_TOOLBAR_CALLBACK": lambda request: DEBUG,
+    "IS_RUNNING_TESTS": False,  # Disable debug toolbar when running tests
 }
 
 # =============================================================================

@@ -102,8 +102,8 @@ LOCAL_APPS = [
     "apps.engagement",
     # Notifications app - email service
     "apps.notifications",
-    # Future apps will be added here as we build them
-    # "apps.cms",
+    # CMS app - pages, banners, settings
+    "apps.cms",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
