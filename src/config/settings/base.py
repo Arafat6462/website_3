@@ -90,8 +90,9 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
-    # Our apps will be added here as we build them
-    # "apps.core",
+    # Core app - abstract models, utilities, exceptions
+    "apps.core",
+    # Future apps will be added here as we build them
     # "apps.users",
     # "apps.products",
     # "apps.orders",
