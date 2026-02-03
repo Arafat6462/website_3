@@ -1,0 +1,38 @@
+# =============================================================================
+# Development Requirements
+# =============================================================================
+# Purpose: Additional packages for development environment
+# Usage: pip install -r requirements/dev.txt
+# =============================================================================
+
+# Include all base requirements
+-r base.txt
+
+# -----------------------------------------------------------------------------
+# Code Quality & Formatting
+# -----------------------------------------------------------------------------
+black>=24.0,<25.0                   # Code formatter
+isort>=5.13,<6.0                    # Import sorting
+flake8>=7.0,<8.0                    # Linting
+mypy>=1.8,<2.0                      # Static type checking
+django-stubs>=4.2,<5.0              # Django type stubs for mypy
+djangorestframework-stubs>=3.14,<4.0  # DRF type stubs
+
+# -----------------------------------------------------------------------------
+# Testing
+# -----------------------------------------------------------------------------
+pytest>=8.0,<9.0                    # Testing framework
+pytest-django>=4.8,<5.0             # Django integration for pytest
+pytest-cov>=4.1,<5.0                # Coverage reporting
+factory-boy>=3.3,<4.0               # Test fixtures
+
+# -----------------------------------------------------------------------------
+# Debugging
+# -----------------------------------------------------------------------------
+django-debug-toolbar>=4.3,<5.0      # Debug toolbar for development
+ipython>=8.0,<9.0                   # Enhanced Python shell
+
+# -----------------------------------------------------------------------------
+# Development Server
+# -----------------------------------------------------------------------------
+watchfiles>=0.21,<1.0               # Fast file watching for auto-reload

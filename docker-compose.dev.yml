@@ -1,0 +1,112 @@
+# =============================================================================
+# Docker Compose - Development Environment
+# =============================================================================
+# Purpose: Orchestrates Django web server and PostgreSQL database
+# Usage: docker compose -f docker-compose.dev.yml up --build
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database Service
+  # ---------------------------------------------------------------------------
+  # Uses official PostgreSQL 16 Alpine image (smaller footprint)
+  # Data persisted in named volume to survive container restarts
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: ecom_db
+    restart: unless-stopped
+    
+    # Environment variables for database initialization
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ecom_db}
+      POSTGRES_USER: ${DB_USER:-ecom_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ecom_password}
+    
+    # Named volume for data persistence
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    
+    # Expose PostgreSQL port to host (optional, for direct DB access)
+    ports:
+      - "5432:5432"
+    
+    # Health check to ensure database is ready before web starts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ecom_user} -d ${DB_NAME:-ecom_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Django Web Application Service
+  # ---------------------------------------------------------------------------
+  # Builds from local Dockerfile
+  # Mounts source code for hot-reload during development
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecom_web
+    restart: unless-stopped
+    
+    # Set working directory to src for Django commands
+    working_dir: /app/src
+    
+    # Override default command to include migrations
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        python manage.py migrate --noinput &&
+        echo 'Starting development server...' &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+    
+    # Mount source code for live reloading
+    # Changes in local ./src reflect immediately in container
+    volumes:
+      - ./src:/app/src
+      - ./requirements:/app/requirements
+      # Named volume for static/media files
+      - static_volume:/app/static
+      - media_volume:/app/media
+    
+    # Expose Django port to host
+    ports:
+      - "8000:8000"
+    
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    
+    # Ensure database is healthy before starting web
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    # Health check for web service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# =============================================================================
+# Named Volumes
+# =============================================================================
+# Persist data across container restarts and rebuilds
+# =============================================================================
+volumes:
+  # PostgreSQL data - IMPORTANT: Don't delete unless you want to lose all data
+  postgres_data:
+    name: ecom_postgres_data
+  
+  # Static files (CSS, JS, admin assets)
+  static_volume:
+    name: ecom_static
+  
+  # User-uploaded media files
+  media_volume:
+    name: ecom_media
