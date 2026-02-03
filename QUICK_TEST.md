@@ -1,12 +1,45 @@
 # 🚀 Quick Start: Test Your E-Commerce APIs
 
-## Option 1: Quick Test Script (Recommended)
+## 🎯 **EASIEST: Interactive Swagger UI** (Recommended!)
+
+**Open in your browser:**
+```
+http://localhost:8000/api/v1/docs/
+```
+
+### What You Get:
+✅ **Visual API explorer** - See all endpoints  
+✅ **Try it out** - Test APIs directly in browser  
+✅ **Auto-generated docs** - Always up-to-date  
+✅ **Request/Response examples** - See expected formats  
+✅ **Authentication testing** - Built-in token support  
+
+### How to Use:
+1. Open http://localhost:8000/api/v1/docs/
+2. Click any endpoint to expand
+3. Click "Try it out"
+4. Fill in parameters
+5. Click "Execute"
+6. See response!
+
+**For authenticated endpoints:**
+1. Register/Login to get token
+2. Click "Authorize" button (🔓 top right)
+3. Enter: `Bearer YOUR_TOKEN_HERE`
+4. Click "Authorize"
+5. Now test protected endpoints!
+
+---
+
+## Option 2: Quick Test Script
 ```bash
 # Run automated quick test
 ./scripts/test_api.sh
 ```
 
-## Option 2: Manual Testing (HTTPie - Beginner Friendly)
+---
+
+## Option 3: Manual Testing (HTTPie)
 
 ### Install HTTPie
 ```bash
@@ -42,7 +75,9 @@ http GET http://localhost:8000/api/v1/users/me/ \
   "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
-## Option 3: Using cURL
+---
+
+## Option 4: Using cURL
 ```bash
 # Health check
 curl http://localhost:8000/api/v1/health/
@@ -70,7 +105,9 @@ curl -X POST http://localhost:8000/api/v1/auth/login/ \
   }'
 ```
 
-## Option 4: Run Automated Tests
+---
+
+## Option 5: Run Automated Tests
 ```bash
 # Run all API tests
 docker compose -f docker-compose.dev.yml exec web pytest apps/api/tests/ -v
@@ -82,7 +119,9 @@ docker compose -f docker-compose.dev.yml exec web pytest apps/api/tests/test_pro
 docker compose -f docker-compose.dev.yml exec web pytest --cov=apps --cov-report=html
 ```
 
-## Option 5: Postman/Insomnia
+---
+
+## Option 6: Postman/Insomnia
 1. Import the Postman collection: `postman_collection.json`
 2. Set base URL variable: `http://localhost:8000/api/v1`
 3. Start testing!

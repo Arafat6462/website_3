@@ -37,17 +37,6 @@ from drf_spectacular.views import (
 api_v1_patterns = [
     # API root and health check (from api.v1.urls)
     path("", include("api.v1.urls")),
-    
-    # API Documentation
-    path("schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
-    
-    # Future app URLs will be added here as we build them
-    # path("cart/", include("api.v1.cart.urls")),
-    # path("orders/", include("api.v1.orders.urls")),
-    # path("users/", include("api.v1.users.urls")),
-    # path("auth/", include("api.v1.auth.urls")),
-    # path("cms/", include("api.v1.cms.urls")),
 ]
 
 # =============================================================================
@@ -63,6 +52,10 @@ urlpatterns = [
     
     # API version 1
     path("api/v1/", include((api_v1_patterns, "api-v1"))),
+    
+    # API Documentation (outside versioned namespace for stability)
+    path("api/v1/schema/", SpectacularAPIView.as_view(), name="api-schema"),
+    path("api/v1/docs/", SpectacularSwaggerView.as_view(url_name="api-schema"), name="api-docs"),
 ]
 
 # =============================================================================
