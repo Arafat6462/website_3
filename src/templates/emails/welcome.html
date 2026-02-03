@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }
+        .content {
+            background-color: #f9f9f9;
+            padding: 30px 20px;
+            border: 1px solid #ddd;
+        }
+        .welcome-box {
+            background-color: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .features {
+            background-color: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .feature {
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .feature:last-child {
+            border-bottom: none;
+        }
+        .feature-icon {
+            display: inline-block;
+            width: 30px;
+            text-align: center;
+            font-size: 20px;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #777;
+            font-size: 14px;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎉 Welcome to {{ site_name }}!</h1>
+    </div>
+    
+    <div class="content">
+        <p>Hi {{ first_name }},</p>
+        
+        <div class="welcome-box">
+            <h2>Your Account is Ready!</h2>
+            <p>Thank you for joining {{ site_name }}. We're excited to have you as part of our community.</p>
+            <p>Your account has been created with the email: <strong>{{ email }}</strong></p>
+        </div>
+        
+        <div class="features">
+            <h3>What You Can Do Now:</h3>
+            
+            <div class="feature">
+                <span class="feature-icon">🛍️</span>
+                <strong>Start Shopping</strong> - Browse thousands of products
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">❤️</span>
+                <strong>Create Wishlist</strong> - Save your favorite items
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">📦</span>
+                <strong>Track Orders</strong> - Monitor your shipments in real-time
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">⭐</span>
+                <strong>Write Reviews</strong> - Share your experience with others
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">🎁</span>
+                <strong>Get Exclusive Deals</strong> - Access member-only promotions
+            </div>
+        </div>
+        
+        <p style="text-align: center;">
+            <a href="{{ login_url }}" class="button">Login to Your Account</a>
+        </p>
+        
+        <p>If you have any questions or need assistance, our customer support team is here to help.</p>
+        
+        <p>Happy shopping!</p>
+        
+        <p>
+            Best regards,<br>
+            <strong>{{ site_name }} Team</strong>
+        </p>
+    </div>
+    
+    <div class="footer">
+        <p>You're receiving this email because you created an account at {{ site_name }}.</p>
+        <p>&copy; {% now "Y" %} {{ site_name }}. All rights reserved.</p>
+    </div>
+</body>
+</html>

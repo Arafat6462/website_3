@@ -100,8 +100,9 @@ LOCAL_APPS = [
     "apps.orders",
     # Engagement app - reviews, wishlist
     "apps.engagement",
+    # Notifications app - email service
+    "apps.notifications",
     # Future apps will be added here as we build them
-    # "apps.notifications",
     # "apps.cms",
 ]
 
@@ -354,6 +355,34 @@ UNFOLD = {
         ],
     },
 }
+
+# =============================================================================
+# EMAIL CONFIGURATION
+# =============================================================================
+
+# Email backend
+# Development: Console backend (prints to terminal)
+# Production: SMTP backend (actual email sending)
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+
+# SMTP Configuration (used in production)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+
+# Sender email address
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL", "noreply@example.com"
+)
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Site information for email templates
+SITE_NAME = os.getenv("SITE_NAME", "E-Commerce Store")
+SITE_URL = os.getenv("SITE_URL", "http://localhost:8000")
 
 # =============================================================================
 # Logging Configuration
