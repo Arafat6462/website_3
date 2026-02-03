@@ -2,6 +2,8 @@
 
 A complete, scalable, production-ready e-commerce backend built with Django REST Framework.
 
+> 📖 **Quick Access:** See [SYSTEM_REFERENCE.md](SYSTEM_REFERENCE.md) for complete system overview and quick reference guide.
+
 ## 🚀 Project Status
 
 **Phase 20/20 COMPLETE** ✅
@@ -15,6 +17,21 @@ All 20 development phases completed including:
 - Admin dashboard with Django Unfold
 - Security hardening with rate limiting
 - Production deployment infrastructure
+
+---
+
+## 🎯 Quick Links
+
+| Resource | Link | Purpose |
+|----------|------|---------|
+| 🎨 **Admin Panel** | http://localhost:8000/admin/ | Manage everything |
+| 📖 **API Docs (Swagger)** | http://localhost:8000/api/v1/docs/ | Interactive API explorer |
+| 📚 **System Reference** | [SYSTEM_REFERENCE.md](SYSTEM_REFERENCE.md) | Complete system guide |
+| 🧪 **Testing Guide** | [API_TESTING_GUIDE.md](API_TESTING_GUIDE.md) | How to test APIs |
+| 🚀 **Quick Start** | [QUICK_TEST.md](QUICK_TEST.md) | Start testing now |
+| 📦 **Deployment** | [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment |
+
+---
 
 ## 📋 Table of Contents
 
