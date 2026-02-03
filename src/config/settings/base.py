@@ -92,9 +92,11 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     # Core app - abstract models, utilities, exceptions
     "apps.core",
+    # Users app - custom user model, must come early
+    "apps.users",
+    # Products app - catalog, EAV attributes, categories
+    "apps.products",
     # Future apps will be added here as we build them
-    # "apps.users",
-    # "apps.products",
     # "apps.orders",
     # "apps.promotions",
     # "apps.engagement",
@@ -197,6 +199,15 @@ AUTH_PASSWORD_VALIDATORS = [
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
+
+# =============================================================================
+# Custom User Model
+# =============================================================================
+# Using custom User model with email as username
+# IMPORTANT: Must be set before running initial migrations
+# =============================================================================
+
+AUTH_USER_MODEL = "users.User"
 
 # Password hashing - Argon2 is the most secure option
 PASSWORD_HASHERS = [
