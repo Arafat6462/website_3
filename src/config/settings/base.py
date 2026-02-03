@@ -98,9 +98,9 @@ LOCAL_APPS = [
     "apps.products",
     # Orders app - cart, checkout, orders
     "apps.orders",
+    # Engagement app - reviews, wishlist
+    "apps.engagement",
     # Future apps will be added here as we build them
-    # "apps.promotions",
-    # "apps.engagement",
     # "apps.notifications",
     # "apps.cms",
 ]
