@@ -96,8 +96,9 @@ LOCAL_APPS = [
     "apps.users",
     # Products app - catalog, EAV attributes, categories
     "apps.products",
+    # Orders app - cart, checkout, orders
+    "apps.orders",
     # Future apps will be added here as we build them
-    # "apps.orders",
     # "apps.promotions",
     # "apps.engagement",
     # "apps.notifications",
