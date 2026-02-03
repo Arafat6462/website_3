@@ -1,5 +1,5 @@
 """
-Orders Application Admin Configuration - Phase 7: Cart, Phase 8: Coupons, Phase 9: Shipping & Tax.
+Orders Application Admin Configuration - Complete Order Management (Phases 7-10).
 """
 
 from typing import Any
@@ -15,6 +15,11 @@ from apps.orders.models import (
     CartItem,
     Coupon,
     CouponUsage,
+    Order,
+    OrderItem,
+    OrderStatusLog,
+    PaymentTransaction,
+    ReturnRequest,
     ShippingZone,
     TaxRule,
 )
@@ -774,6 +779,539 @@ class TaxRuleAdmin(TimeStampedAdminMixin, BaseModelAdmin):
         self.message_user(request, f"Deactivated {count} tax rules.")
 
     actions = ["activate_rules", "deactivate_rules"]
+
+
+class OrderItemInline(admin.TabularInline):
+    """Inline admin for order items."""
+
+    model = OrderItem
+    extra = 0
+    fields = ["product_name", "variant_name", "sku", "unit_price", "quantity", "line_total"]
+    readonly_fields = ["product_name", "variant_name", "sku", "unit_price", "quantity", "line_total"]
+    can_delete = False
+
+    def has_add_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        """Disable manual addition."""
+        return False
+
+
+class OrderStatusLogInline(admin.TabularInline):
+    """Inline admin for order status logs."""
+
+    model = OrderStatusLog
+    extra = 0
+    fields = ["from_status", "to_status", "changed_by", "notes", "created_at"]
+    readonly_fields = ["from_status", "to_status", "changed_by", "notes", "created_at"]
+    can_delete = False
+
+    def has_add_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        """Disable manual addition."""
+        return False
+
+
+class PaymentTransactionInline(admin.TabularInline):
+    """Inline admin for payment transactions."""
+
+    model = PaymentTransaction
+    extra = 0
+    fields = ["provider", "amount", "status", "provider_reference", "created_at"]
+    readonly_fields = ["provider", "amount", "status", "provider_reference", "created_at"]
+    can_delete = False
+
+    def has_add_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        """Disable manual addition."""
+        return False
+
+
+@admin.register(Order)
+class OrderAdmin(TimeStampedAdminMixin, BaseModelAdmin):
+    """
+    Admin interface for Order model.
+
+    Features:
+    - Complete order management
+    - Status workflow with buttons
+    - Payment tracking
+    - Shipping management
+    - Order search and filtering
+    """
+
+    list_display = [
+        "order_number",
+        "customer_info",
+        "status_badge",
+        "payment_badge",
+        "total_display",
+        "created_at",
+    ]
+    list_filter = [
+        "status",
+        "payment_status",
+        "payment_method",
+        "created_at",
+        "is_deleted",
+    ]
+    search_fields = [
+        "order_number",
+        "customer_name",
+        "customer_email",
+        "customer_phone",
+    ]
+    readonly_fields = [
+        "public_id",
+        "order_number",
+        "total_display",
+        "confirmed_at",
+        "shipped_at",
+        "delivered_at",
+        "cancelled_at",
+        "created_at",
+        "updated_at",
+    ]
+    fieldsets = [
+        (
+            "Order Information",
+            {
+                "fields": [
+                    "public_id",
+                    "order_number",
+                    "user",
+                    "status",
+                    "payment_status",
+                ]
+            },
+        ),
+        (
+            "Customer Details",
+            {
+                "fields": [
+                    "customer_name",
+                    "customer_email",
+                    "customer_phone",
+                ]
+            },
+        ),
+        (
+            "Shipping Address",
+            {
+                "fields": [
+                    "shipping_zone",
+                    "shipping_address_line1",
+                    "shipping_address_line2",
+                    "shipping_city",
+                    "shipping_area",
+                    "shipping_postal_code",
+                ]
+            },
+        ),
+        (
+            "Pricing",
+            {
+                "fields": [
+                    "subtotal",
+                    "discount_amount",
+                    "shipping_cost",
+                    "tax_amount",
+                    "total_display",
+                ]
+            },
+        ),
+        (
+            "Payment",
+            {
+                "fields": [
+                    "payment_method",
+                    "payment_reference",
+                ]
+            },
+        ),
+        (
+            "Coupon",
+            {
+                "fields": ["coupon", "coupon_code"],
+                "classes": ["collapse"],
+            },
+        ),
+        (
+            "Shipping Details",
+            {
+                "fields": [
+                    "tracking_number",
+                    "courier_name",
+                    "estimated_delivery",
+                ],
+                "classes": ["collapse"],
+            },
+        ),
+        (
+            "Notes",
+            {
+                "fields": ["customer_notes", "admin_notes"],
+                "classes": ["collapse"],
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": [
+                    "confirmed_at",
+                    "shipped_at",
+                    "delivered_at",
+                    "cancelled_at",
+                    "created_at",
+                    "updated_at",
+                ],
+                "classes": ["collapse"],
+            },
+        ),
+    ]
+    inlines = [OrderItemInline, OrderStatusLogInline, PaymentTransactionInline]
+    autocomplete_fields = ["user", "shipping_zone", "coupon"]
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """Include soft-deleted orders."""
+        return Order.all_objects.all()
+
+    @admin.display(description="Customer")
+    def customer_info(self, obj: Order) -> str:
+        """Display customer information."""
+        return format_html(
+            '<strong>{}</strong><br><small>{}</small>',
+            obj.customer_name,
+            obj.customer_phone,
+        )
+
+    @admin.display(description="Status")
+    def status_badge(self, obj: Order) -> str:
+        """Display status badge."""
+        colors = {
+            "pending": "#ffc107",
+            "confirmed": "#17a2b8",
+            "processing": "#007bff",
+            "shipped": "#6f42c1",
+            "delivered": "#28a745",
+            "cancelled": "#dc3545",
+            "refunded": "#6c757d",
+        }
+        color = colors.get(obj.status, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 10px; border-radius: 3px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display(),
+        )
+
+    @admin.display(description="Payment")
+    def payment_badge(self, obj: Order) -> str:
+        """Display payment status."""
+        colors = {
+            "pending": "#ffc107",
+            "paid": "#28a745",
+            "failed": "#dc3545",
+            "refunded": "#6c757d",
+        }
+        color = colors.get(obj.payment_status, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 10px; border-radius: 3px;">{}</span>',
+            color,
+            obj.get_payment_status_display(),
+        )
+
+    @admin.display(description="Total")
+    def total_display(self, obj: Order) -> str:
+        """Display order total."""
+        return format_html(
+            '<strong style="color: #28a745; font-size: 14px;">৳{:.2f}</strong>',
+            obj.total,
+        )
+
+    @admin.action(description="Mark as Confirmed")
+    def confirm_orders(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Confirm selected orders."""
+        from apps.orders.services import OrderService
+
+        count = 0
+        for order in queryset.filter(status="pending"):
+            OrderService.change_status(
+                order, "confirmed", request.user, "Bulk confirmed by admin"
+            )
+            count += 1
+        self.message_user(request, f"Confirmed {count} orders.")
+
+    @admin.action(description="Mark as Shipped")
+    def ship_orders(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Mark orders as shipped."""
+        from apps.orders.services import OrderService
+
+        count = 0
+        for order in queryset.filter(status__in=["confirmed", "processing"]):
+            OrderService.change_status(
+                order, "shipped", request.user, "Bulk shipped by admin"
+            )
+            count += 1
+        self.message_user(request, f"Shipped {count} orders.")
+
+    actions = ["confirm_orders", "ship_orders"]
+
+
+@admin.register(OrderItem)
+class OrderItemAdmin(BaseModelAdmin):
+    """Admin for individual order items."""
+
+    list_display = [
+        "order",
+        "product_name",
+        "variant_name",
+        "sku",
+        "unit_price",
+        "quantity",
+        "line_total",
+    ]
+    list_filter = ["order__status", "order__created_at"]
+    search_fields = ["product_name", "sku", "order__order_number"]
+    readonly_fields = [
+        "order",
+        "variant",
+        "product_name",
+        "variant_name",
+        "sku",
+        "unit_price",
+        "quantity",
+        "line_total",
+    ]
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Disable manual addition."""
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: Any = None
+    ) -> bool:
+        """Disable deletion."""
+        return False
+
+
+@admin.register(OrderStatusLog)
+class OrderStatusLogAdmin(BaseModelAdmin):
+    """Admin for order status change logs."""
+
+    list_display = [
+        "order",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "created_at",
+    ]
+    list_filter = ["from_status", "to_status", "created_at"]
+    search_fields = ["order__order_number", "notes"]
+    readonly_fields = [
+        "order",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "notes",
+        "created_at",
+    ]
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Disable manual addition."""
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: Any = None
+    ) -> bool:
+        """Disable deletion."""
+        return False
+
+
+@admin.register(PaymentTransaction)
+class PaymentTransactionAdmin(BaseModelAdmin):
+    """Admin for payment transactions."""
+
+    list_display = [
+        "order",
+        "provider",
+        "amount_display",
+        "status_badge",
+        "provider_reference",
+        "created_at",
+    ]
+    list_filter = ["provider", "status", "created_at"]
+    search_fields = [
+        "order__order_number",
+        "provider_reference",
+    ]
+    readonly_fields = [
+        "order",
+        "provider",
+        "amount",
+        "status",
+        "provider_reference",
+        "raw_response",
+        "created_at",
+    ]
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Disable manual addition."""
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: Any = None
+    ) -> bool:
+        """Disable deletion."""
+        return False
+
+    @admin.display(description="Amount")
+    def amount_display(self, obj: PaymentTransaction) -> str:
+        """Display transaction amount."""
+        return format_html('<strong>৳{:.2f}</strong>', obj.amount)
+
+    @admin.display(description="Status")
+    def status_badge(self, obj: PaymentTransaction) -> str:
+        """Display status badge."""
+        colors = {
+            "pending": "#ffc107",
+            "completed": "#28a745",
+            "failed": "#dc3545",
+            "refunded": "#6c757d",
+        }
+        color = colors.get(obj.status, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 10px; border-radius: 3px;">{}</span>',
+            color,
+            obj.get_status_display(),
+        )
+
+
+@admin.register(ReturnRequest)
+class ReturnRequestAdmin(TimeStampedAdminMixin, BaseModelAdmin):
+    """Admin for return requests."""
+
+    list_display = [
+        "id",
+        "order",
+        "status_badge",
+        "reason",
+        "refund_amount_display",
+        "created_at",
+    ]
+    list_filter = ["status", "reason", "created_at"]
+    search_fields = ["order__order_number", "customer_notes"]
+    readonly_fields = [
+        "order",
+        "user",
+        "items_snapshot",
+        "created_at",
+        "updated_at",
+        "processed_at",
+    ]
+    fieldsets = [
+        (
+            "Return Information",
+            {
+                "fields": [
+                    "order",
+                    "user",
+                    "status",
+                    "reason",
+                ]
+            },
+        ),
+        (
+            "Details",
+            {
+                "fields": [
+                    "customer_notes",
+                    "admin_notes",
+                    "items_snapshot",
+                    "refund_amount",
+                ]
+            },
+        ),
+        (
+            "Processing",
+            {
+                "fields": [
+                    "processed_by",
+                    "processed_at",
+                ],
+                "classes": ["collapse"],
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": ["created_at", "updated_at"],
+                "classes": ["collapse"],
+            },
+        ),
+    ]
+    autocomplete_fields = ["order", "user", "processed_by"]
+
+    @admin.display(description="Status")
+    def status_badge(self, obj: ReturnRequest) -> str:
+        """Display status badge."""
+        colors = {
+            "requested": "#ffc107",
+            "approved": "#28a745",
+            "rejected": "#dc3545",
+            "completed": "#007bff",
+            "refunded": "#6c757d",
+        }
+        color = colors.get(obj.status, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 10px; border-radius: 3px;">{}</span>',
+            color,
+            obj.get_status_display(),
+        )
+
+    @admin.display(description="Refund Amount")
+    def refund_amount_display(self, obj: ReturnRequest) -> str:
+        """Display refund amount."""
+        if obj.refund_amount:
+            return format_html(
+                '<strong style="color: #28a745;">৳{:.2f}</strong>',
+                obj.refund_amount,
+            )
+        return format_html('<span style="color: gray;">Not set</span>')
+
+    @admin.action(description="Approve selected returns")
+    def approve_returns(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Approve selected return requests."""
+        from apps.orders.services import OrderService
+
+        count = 0
+        for return_req in queryset.filter(status="requested"):
+            OrderService.process_return_request(
+                return_req.id,
+                approved=True,
+                processed_by=request.user,
+                admin_notes="Bulk approved by admin",
+            )
+            count += 1
+        self.message_user(request, f"Approved {count} return requests.")
+
+    @admin.action(description="Reject selected returns")
+    def reject_returns(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Reject selected return requests."""
+        from apps.orders.services import OrderService
+
+        count = 0
+        for return_req in queryset.filter(status="requested"):
+            OrderService.process_return_request(
+                return_req.id,
+                approved=False,
+                processed_by=request.user,
+                admin_notes="Bulk rejected by admin",
+            )
+            count += 1
+        self.message_user(request, f"Rejected {count} return requests.")
+
+    actions = ["approve_returns", "reject_returns"]
+
 
 
 

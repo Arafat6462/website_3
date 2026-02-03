@@ -1,11 +1,12 @@
 """
-Orders service - business logic for cart, coupon, shipping, and tax operations.
+Orders service - business logic for complete order management.
 
 This module provides thread-safe operations with validation:
 - CartService: Shopping cart management
 - CouponService: Coupon validation and discount calculation
 - ShippingService: Shipping cost calculation
 - TaxService: Tax calculation
+- OrderService: Order creation and lifecycle management
 """
 
 from datetime import timedelta
@@ -856,5 +857,368 @@ class TaxService:
             )
 
         return breakdown
+
+
+class OrderService:
+    """
+    Service for order management operations.
+
+    Handles:
+    - Order creation from cart
+    - Status changes with inventory management
+    - Payment recording
+    - Return request processing
+
+    Usage:
+        # Create order from cart
+        order = OrderService.create_from_cart(
+            cart, user, shipping_data, payment_method
+        )
+        
+        # Change status
+        OrderService.change_status(order, 'confirmed', user, 'Stock verified')
+        
+        # Record payment
+        OrderService.record_payment(order, 'bkash', amount, 'TXN123')
+    """
+
+    @staticmethod
+    @transaction.atomic
+    def create_from_cart(
+        cart: Any,
+        shipping_data: dict[str, Any],
+        payment_method: str,
+        user: Any | None = None,
+        coupon: Any | None = None,
+        ip_address: str | None = None,
+    ) -> Any:
+        """
+        Create order from shopping cart.
+
+        Args:
+            cart: Cart instance
+            shipping_data: Dictionary with:
+                - customer_name (str)
+                - customer_email (str)
+                - customer_phone (str)
+                - address_line1 (str)
+                - address_line2 (str, optional)
+                - city (str)
+                - area (str)
+                - postal_code (str, optional)
+            payment_method: Payment method (cod, bkash, card, etc.)
+            user: User placing order (None for guest)
+            coupon: Applied coupon (optional)
+            ip_address: Customer IP address (optional)
+
+        Returns:
+            Order instance
+
+        Raises:
+            ValidationError: If cart validation fails
+            InsufficientStockError: If stock not available
+
+        Side effects:
+            - Reserves stock for all items
+            - Clears cart items
+            - Creates coupon usage record if coupon applied
+
+        Example:
+            order = OrderService.create_from_cart(
+                cart=cart,
+                shipping_data={
+                    'customer_name': 'Rahim Ahmed',
+                    'customer_email': 'rahim@example.com',
+                    'customer_phone': '01712345678',
+                    'address_line1': '123 Main St',
+                    'city': 'Dhaka',
+                    'area': 'Mirpur',
+                },
+                payment_method='cod',
+                user=user,
+            )
+        """
+        from apps.orders.models import Order, OrderItem
+        from apps.products.inventory import InventoryService
+
+        # Validate cart
+        validation = CartService.validate_cart(cart)
+        if not validation["valid"]:
+            raise ValidationError(f"Cart validation failed: {validation['errors']}")
+
+        # Calculate totals
+        subtotal = float(cart.subtotal)
+
+        # Calculate discount
+        discount_amount = 0.0
+        coupon_code = ""
+        if coupon:
+            discount_amount = CouponService.calculate_discount(coupon, cart)
+            coupon_code = coupon.code
+
+        # Calculate shipping
+        shipping_result = ShippingService.calculate_shipping(
+            cart, shipping_data["area"]
+        )
+        if shipping_result["error"]:
+            raise ValidationError(shipping_result["error"])
+
+        shipping_cost = shipping_result["cost"]
+        shipping_zone = shipping_result["zone"]
+
+        # Calculate tax (on subtotal - discount)
+        taxable_amount = subtotal - discount_amount
+        tax_amount = TaxService.calculate_order_tax(taxable_amount)
+
+        # Calculate total
+        total = subtotal - discount_amount + shipping_cost + tax_amount
+
+        # Create order
+        order = Order.objects.create(
+            user=user,
+            shipping_zone=shipping_zone,
+            customer_name=shipping_data["customer_name"],
+            customer_email=shipping_data["customer_email"],
+            customer_phone=shipping_data["customer_phone"],
+            shipping_address_line1=shipping_data["address_line1"],
+            shipping_address_line2=shipping_data.get("address_line2", ""),
+            shipping_city=shipping_data["city"],
+            shipping_area=shipping_data["area"],
+            shipping_postal_code=shipping_data.get("postal_code", ""),
+            subtotal=subtotal,
+            discount_amount=discount_amount,
+            shipping_cost=shipping_cost,
+            tax_amount=tax_amount,
+            total=total,
+            payment_method=payment_method,
+            coupon=coupon,
+            coupon_code=coupon_code,
+            customer_notes=shipping_data.get("customer_notes", ""),
+            ip_address=ip_address,
+        )
+
+        # Create order items and reserve stock
+        for cart_item in cart.items.select_related("variant__product"):
+            variant = cart_item.variant
+
+            # Create order item with snapshot
+            OrderItem.objects.create(
+                order=order,
+                variant=variant,
+                product_name=variant.product.name,
+                variant_name=variant.name,
+                sku=variant.sku,
+                unit_price=cart_item.unit_price,
+                quantity=cart_item.quantity,
+                attributes_snapshot={},  # TODO: Capture variant attributes
+            )
+
+            # Reserve stock
+            InventoryService.reserve_stock(
+                variant, cart_item.quantity, f"Order {order.order_number}"
+            )
+
+        # Track coupon usage
+        if coupon:
+            CouponService.apply_coupon(
+                coupon,
+                cart,
+                user=user,
+                guest_identifier=shipping_data["customer_email"]
+                if not user
+                else None,
+                discount_amount=discount_amount,
+            )
+            # Update coupon usage with order reference
+            from apps.orders.models import CouponUsage
+
+            CouponUsage.objects.filter(coupon=coupon, user=user).update(order=order)
+
+        # Clear cart
+        cart.items.all().delete()
+
+        return order
+
+    @staticmethod
+    @transaction.atomic
+    def change_status(
+        order: Any, new_status: str, changed_by: Any | None = None, notes: str = ""
+    ) -> None:
+        """
+        Change order status with logging and inventory management.
+
+        Args:
+            order: Order instance
+            new_status: New status (pending, confirmed, processing, etc.)
+            changed_by: User making the change
+            notes: Reason for change
+
+        Side effects:
+            - Creates OrderStatusLog entry
+            - Updates order status
+            - Sets status timestamps (confirmed_at, shipped_at, etc.)
+            - Manages inventory (cancel = restore stock)
+
+        Example:
+            OrderService.change_status(
+                order, 'confirmed', admin_user, 'Payment verified'
+            )
+        """
+        from apps.orders.models import OrderStatusLog
+        from apps.products.inventory import InventoryService
+
+        old_status = order.status
+
+        # Create status log
+        OrderStatusLog.objects.create(
+            order=order,
+            from_status=old_status,
+            to_status=new_status,
+            changed_by=changed_by,
+            notes=notes,
+        )
+
+        # Update status
+        order.status = new_status
+
+        # Set timestamps
+        now = timezone.now()
+        if new_status == "confirmed" and not order.confirmed_at:
+            order.confirmed_at = now
+        elif new_status == "shipped" and not order.shipped_at:
+            order.shipped_at = now
+        elif new_status == "delivered" and not order.delivered_at:
+            order.delivered_at = now
+        elif new_status == "cancelled" and not order.cancelled_at:
+            order.cancelled_at = now
+
+            # Restore stock for cancelled orders
+            for item in order.items.all():
+                if item.variant:
+                    InventoryService.release_stock(
+                        item.variant, item.quantity, f"Order {order.order_number} cancelled"
+                    )
+
+        order.save()
+
+    @staticmethod
+    @transaction.atomic
+    def record_payment(
+        order: Any,
+        provider: str,
+        amount: float,
+        reference: str = "",
+        status: str = "completed",
+        raw_response: dict | None = None,
+    ) -> Any:
+        """
+        Record a payment transaction.
+
+        Args:
+            order: Order instance
+            provider: Payment provider (cod, bkash, nagad, etc.)
+            amount: Payment amount
+            reference: Provider transaction reference
+            status: Transaction status (completed, failed, etc.)
+            raw_response: Full provider response (optional)
+
+        Returns:
+            PaymentTransaction instance
+
+        Side effects:
+            - Updates order payment_status if completed
+            - Updates order payment_reference
+
+        Example:
+            transaction = OrderService.record_payment(
+                order, 'bkash', 500.00, 'TXN123456', 'completed'
+            )
+        """
+        from apps.orders.models import PaymentTransaction
+
+        transaction = PaymentTransaction.objects.create(
+            order=order,
+            provider=provider,
+            amount=amount,
+            status=status,
+            provider_reference=reference,
+            raw_response=raw_response or {},
+        )
+
+        # Update order payment info
+        if status == "completed":
+            order.payment_status = "paid"
+            order.payment_reference = reference
+            order.save(update_fields=["payment_status", "payment_reference", "updated_at"])
+
+        return transaction
+
+    @staticmethod
+    @transaction.atomic
+    def process_return_request(
+        request_id: int,
+        approved: bool,
+        processed_by: Any,
+        admin_notes: str = "",
+        refund_amount: float | None = None,
+    ) -> Any:
+        """
+        Process a return request.
+
+        Args:
+            request_id: ReturnRequest ID
+            approved: Whether to approve or reject
+            processed_by: Admin user processing request
+            admin_notes: Processing notes
+            refund_amount: Amount to refund (if different from order total)
+
+        Returns:
+            Updated ReturnRequest instance
+
+        Side effects:
+            - Updates return request status
+            - Restores stock if approved
+            - Updates order status
+
+        Example:
+            return_req = OrderService.process_return_request(
+                request_id=1,
+                approved=True,
+                processed_by=admin,
+                admin_notes='Valid return reason',
+                refund_amount=500.00
+            )
+        """
+        from apps.orders.models import ReturnRequest
+        from apps.products.inventory import InventoryService
+
+        return_request = ReturnRequest.objects.select_related("order").get(
+            id=request_id
+        )
+
+        if approved:
+            return_request.status = "approved"
+            if refund_amount:
+                return_request.refund_amount = refund_amount
+
+            # Restore stock for returned items
+            for item in return_request.order.items.all():
+                if item.variant:
+                    InventoryService.process_return(
+                        item.variant,
+                        item.quantity,
+                        f"Return request #{return_request.id}",
+                        processed_by,
+                    )
+        else:
+            return_request.status = "rejected"
+
+        return_request.admin_notes = admin_notes
+        return_request.processed_by = processed_by
+        return_request.processed_at = timezone.now()
+        return_request.save()
+
+        return return_request
+
 
 

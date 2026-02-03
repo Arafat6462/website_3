@@ -1,26 +1,30 @@
 """
-Orders Application Models - Phase 7: Cart, Phase 8: Coupons, Phase 9: Shipping & Tax.
+Orders Application Models - Phases 7-10: Complete Order Management.
 
-This module contains models for shopping cart, coupon, and shipping functionality:
+This module contains models for complete e-commerce order flow:
 - Cart: Shopping cart for users or guest sessions
 - CartItem: Individual items in a cart
 - Coupon: Promotional discount coupons
 - CouponUsage: Tracking coupon usage
 - ShippingZone: Area-based shipping costs
 - TaxRule: Tax calculation rules
-
-Future phases will add:
-- Order, OrderItem, OrderStatusLog (Phase 10)
+- Order: Customer orders
+- OrderItem: Items in an order
+- OrderStatusLog: Order status change history
+- PaymentTransaction: Payment records
+- ReturnRequest: Product return requests
 """
 
 from datetime import timedelta
 from typing import Any
+import uuid
 
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
 from apps.core.models import SoftDeleteModel, TimeStampedModel
+from apps.core.managers import SoftDeleteManager, SoftDeleteAllManager
 
 
 class Cart(TimeStampedModel):
@@ -341,14 +345,13 @@ class CouponUsage(models.Model):
         blank=True,
         related_name="coupon_usages",
     )
-    # order field will be added in Phase 10
-    # order = models.ForeignKey(
-    #     "Order",
-    #     on_delete=models.CASCADE,
-    #     null=True,
-    #     blank=True,
-    #     related_name="coupon_usages",
-    # )
+    order = models.ForeignKey(
+        "Order",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="coupon_usages",
+    )
     guest_identifier = models.CharField(
         max_length=255,
         blank=True,
@@ -518,3 +521,440 @@ class TaxRule(TimeStampedModel):
         if self.type == "percentage":
             return round(amount * (float(self.rate) / 100), 2)
         return float(self.rate)
+
+
+class Order(SoftDeleteModel):
+    """
+    Customer order with complete transaction details.
+
+    Stores customer information, items, pricing, payment, and shipping details.
+    Supports both authenticated users and guest checkout.
+
+    Attributes:
+        public_id: UUID for external reference (hide sequential IDs)
+        order_number: Human-readable order number (e.g., ORD-2026-00001)
+        user: User who placed order (nullable for guest checkout)
+        shipping_zone: Selected shipping zone
+        
+        Customer Info:
+        customer_name, customer_email, customer_phone: Contact details
+        shipping_address_*: Full delivery address
+        
+        Order Status:
+        status: Current order status (pending, confirmed, shipped, etc.)
+        payment_method: Payment method used (cod, bkash, card, etc.)
+        payment_status: Payment state (pending, paid, failed, refunded)
+        
+        Pricing:
+        subtotal: Cart items total
+        discount_amount: Coupon discount applied
+        shipping_cost: Delivery cost
+        tax_amount: Tax total
+        total: Final order total
+        
+        Coupon:
+        coupon: Applied coupon (nullable)
+        coupon_code: Stored code for reference
+        
+        Notes:
+        customer_notes: Customer's delivery instructions
+        admin_notes: Internal staff notes
+        
+        Shipping:
+        tracking_number: Courier tracking number
+        courier_name: Delivery service name
+        estimated_delivery: Expected delivery date
+        
+        Timestamps:
+        confirmed_at, shipped_at, delivered_at, cancelled_at: Status timestamps
+        ip_address: Customer IP for fraud detection
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("confirmed", "Confirmed"),
+        ("processing", "Processing"),
+        ("shipped", "Shipped"),
+        ("delivered", "Delivered"),
+        ("cancelled", "Cancelled"),
+        ("refunded", "Refunded"),
+    ]
+
+    PAYMENT_METHOD_CHOICES = [
+        ("cod", "Cash on Delivery"),
+        ("bkash", "bKash"),
+        ("nagad", "Nagad"),
+        ("card", "Credit/Debit Card"),
+    ]
+
+    PAYMENT_STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("paid", "Paid"),
+        ("failed", "Failed"),
+        ("refunded", "Refunded"),
+    ]
+
+    # Identification
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    order_number = models.CharField(max_length=50, unique=True, db_index=True)
+
+    # User (nullable for guest checkout)
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+    )
+
+    # Shipping zone
+    shipping_zone = models.ForeignKey(
+        ShippingZone,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+    )
+
+    # Customer information
+    customer_name = models.CharField(max_length=200)
+    customer_email = models.EmailField()
+    customer_phone = models.CharField(max_length=20)
+
+    # Shipping address
+    shipping_address_line1 = models.CharField(max_length=255)
+    shipping_address_line2 = models.CharField(max_length=255, blank=True)
+    shipping_city = models.CharField(max_length=100)
+    shipping_area = models.CharField(max_length=100)
+    shipping_postal_code = models.CharField(max_length=20, blank=True)
+
+    # Order status
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True
+    )
+
+    # Pricing
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
+    discount_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    shipping_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=10, decimal_places=2)
+
+    # Payment
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES)
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PAYMENT_STATUS_CHOICES,
+        default="pending",
+        db_index=True,
+    )
+    payment_reference = models.CharField(max_length=255, blank=True)
+
+    # Coupon
+    coupon = models.ForeignKey(
+        Coupon,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+    )
+    coupon_code = models.CharField(max_length=50, blank=True)
+
+    # Notes
+    customer_notes = models.TextField(blank=True)
+    admin_notes = models.TextField(blank=True)
+
+    # Shipping tracking
+    tracking_number = models.CharField(max_length=100, blank=True)
+    courier_name = models.CharField(max_length=100, blank=True)
+    estimated_delivery = models.DateField(null=True, blank=True)
+
+    # Status timestamps
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    shipped_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    # Metadata
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    # Managers
+    objects = SoftDeleteManager()
+    all_objects = SoftDeleteAllManager()
+
+    class Meta:
+        db_table = "orders_order"
+        verbose_name = "Order"
+        verbose_name_plural = "Orders"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["order_number"]),
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["payment_status"]),
+            models.Index(fields=["customer_email"]),
+            models.Index(fields=["customer_phone"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.order_number} - {self.customer_name}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Generate order number on creation."""
+        if not self.order_number:
+            from apps.core.utils import generate_order_number
+
+            self.order_number = generate_order_number()
+        super().save(*args, **kwargs)
+
+    @property
+    def is_paid(self) -> bool:
+        """Check if order is paid."""
+        return self.payment_status == "paid"
+
+    @property
+    def can_be_cancelled(self) -> bool:
+        """Check if order can be cancelled."""
+        return self.status in ["pending", "confirmed"]
+
+    @property
+    def is_completed(self) -> bool:
+        """Check if order is completed."""
+        return self.status == "delivered"
+
+
+class OrderItem(models.Model):
+    """
+    Individual item in an order.
+
+    Stores snapshot of product/variant at time of purchase.
+    Prices and attributes frozen to preserve order history.
+
+    Attributes:
+        order: Parent order
+        variant: Product variant ordered
+        product_name: Product name (snapshot)
+        variant_name: Variant name (snapshot)
+        sku: Variant SKU (snapshot)
+        unit_price: Price at time of order
+        quantity: Quantity ordered
+        line_total: Total for this line (unit_price * quantity)
+        attributes_snapshot: JSON of variant attributes at purchase time
+    """
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
+    variant = models.ForeignKey(
+        "products.ProductVariant",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_items",
+    )
+
+    # Snapshot data (preserved even if product deleted)
+    product_name = models.CharField(max_length=255)
+    variant_name = models.CharField(max_length=255, blank=True)
+    sku = models.CharField(max_length=100)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    line_total = models.DecimalField(max_digits=10, decimal_places=2)
+
+    # Attributes at purchase time (for reference)
+    attributes_snapshot = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = "orders_order_item"
+        verbose_name = "Order Item"
+        verbose_name_plural = "Order Items"
+        ordering = ["id"]
+
+    def __str__(self) -> str:
+        return f"{self.product_name} x{self.quantity}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Calculate line total on save."""
+        self.line_total = self.unit_price * self.quantity
+        super().save(*args, **kwargs)
+
+
+class OrderStatusLog(models.Model):
+    """
+    Log of order status changes.
+
+    Tracks who changed status, when, and why.
+    Provides complete audit trail for orders.
+
+    Attributes:
+        order: Parent order
+        from_status: Previous status
+        to_status: New status
+        changed_by: User who made the change
+        notes: Reason for change
+        created_at: When change occurred
+    """
+
+    order = models.ForeignKey(
+        Order, on_delete=models.CASCADE, related_name="status_logs"
+    )
+    from_status = models.CharField(max_length=20)
+    to_status = models.CharField(max_length=20)
+    changed_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_status_changes",
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "orders_order_status_log"
+        verbose_name = "Order Status Log"
+        verbose_name_plural = "Order Status Logs"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.order.order_number}: {self.from_status} → {self.to_status}"
+
+
+class PaymentTransaction(models.Model):
+    """
+    Payment transaction record.
+
+    Logs all payment attempts for orders.
+    Stores provider responses for debugging and reconciliation.
+
+    Attributes:
+        order: Parent order
+        provider: Payment provider (cod, bkash, nagad, etc.)
+        amount: Transaction amount
+        status: Transaction status (pending, completed, failed, refunded)
+        provider_reference: Provider's transaction ID
+        raw_response: Full API response (JSON)
+        created_at: Transaction timestamp
+    """
+
+    PROVIDER_CHOICES = [
+        ("cod", "Cash on Delivery"),
+        ("bkash", "bKash"),
+        ("nagad", "Nagad"),
+        ("sslcommerz", "SSLCommerz"),
+        ("card", "Credit/Debit Card"),
+    ]
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("refunded", "Refunded"),
+    ]
+
+    order = models.ForeignKey(
+        Order, on_delete=models.CASCADE, related_name="payment_transactions"
+    )
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    provider_reference = models.CharField(max_length=255, blank=True)
+    raw_response = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "orders_payment_transaction"
+        verbose_name = "Payment Transaction"
+        verbose_name_plural = "Payment Transactions"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["order", "-created_at"]),
+            models.Index(fields=["provider", "status"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.order.order_number} - {self.provider} (৳{self.amount})"
+
+
+class ReturnRequest(models.Model):
+    """
+    Product return request.
+
+    Handles customer return requests with approval workflow.
+
+    Attributes:
+        order: Parent order
+        user: User requesting return
+        status: Return status (requested, approved, rejected, completed, refunded)
+        reason: Return reason
+        customer_notes: Customer's explanation
+        admin_notes: Internal processing notes
+        items_snapshot: JSON of items being returned
+        refund_amount: Amount to refund
+        processed_by: Admin who processed request
+        processed_at: Processing timestamp
+    """
+
+    STATUS_CHOICES = [
+        ("requested", "Requested"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+        ("completed", "Completed"),
+        ("refunded", "Refunded"),
+    ]
+
+    REASON_CHOICES = [
+        ("damaged", "Damaged Product"),
+        ("wrong_item", "Wrong Item Delivered"),
+        ("not_as_described", "Not as Described"),
+        ("changed_mind", "Changed Mind"),
+        ("other", "Other"),
+    ]
+
+    order = models.ForeignKey(
+        Order, on_delete=models.CASCADE, related_name="return_requests"
+    )
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="return_requests",
+    )
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="requested", db_index=True
+    )
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES)
+    customer_notes = models.TextField(blank=True)
+    admin_notes = models.TextField(blank=True)
+
+    items_snapshot = models.JSONField(default=dict, blank=True)
+    refund_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True
+    )
+
+    processed_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="processed_returns",
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "orders_return_request"
+        verbose_name = "Return Request"
+        verbose_name_plural = "Return Requests"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["order"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Return #{self.id} - {self.order.order_number}"
+

@@ -251,3 +251,43 @@ def format_price(amount: Any, currency_symbol: str = "৳") -> str:
     formatted = f"{amount:,.2f}"
 
     return f"{currency_symbol}{formatted}"
+
+
+def generate_order_number() -> str:
+    """
+    Generate a unique order number.
+
+    Format: ORD-YYYY-NNNNN
+    Example: ORD-2026-00001
+
+    Returns:
+        Unique order number string
+
+    Example:
+        order_number = generate_order_number()
+        # Returns: "ORD-2026-00001"
+    """
+    from datetime import datetime
+
+    from apps.orders.models import Order
+
+    year = datetime.now().year
+    prefix = f"ORD-{year}-"
+
+    # Get last order number for this year
+    last_order = (
+        Order.all_objects.filter(order_number__startswith=prefix)
+        .order_by("-order_number")
+        .first()
+    )
+
+    if last_order:
+        # Extract number and increment
+        last_number = int(last_order.order_number.split("-")[-1])
+        next_number = last_number + 1
+    else:
+        next_number = 1
+
+    # Format with 5 digits
+    return f"{prefix}{next_number:05d}"
+
