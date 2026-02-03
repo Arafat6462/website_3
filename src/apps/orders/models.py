@@ -1,15 +1,16 @@
 """
-Orders Application Models - Phase 7: Cart System, Phase 8: Coupon System.
+Orders Application Models - Phase 7: Cart, Phase 8: Coupons, Phase 9: Shipping & Tax.
 
-This module contains models for shopping cart and coupon functionality:
+This module contains models for shopping cart, coupon, and shipping functionality:
 - Cart: Shopping cart for users or guest sessions
 - CartItem: Individual items in a cart
 - Coupon: Promotional discount coupons
 - CouponUsage: Tracking coupon usage
+- ShippingZone: Area-based shipping costs
+- TaxRule: Tax calculation rules
 
 Future phases will add:
 - Order, OrderItem, OrderStatusLog (Phase 10)
-- ShippingZone, TaxRule (Phase 9)
 """
 
 from datetime import timedelta
@@ -369,3 +370,151 @@ class CouponUsage(models.Model):
     def __str__(self) -> str:
         user_info = self.user.email if self.user else self.guest_identifier
         return f"{self.coupon.code} used by {user_info}"
+
+
+class ShippingZone(TimeStampedModel):
+    """
+    Shipping zone with area-based delivery costs.
+
+    Groups delivery areas by shipping cost and delivery time.
+    Supports free shipping thresholds.
+
+    Attributes:
+        name: Zone name (e.g., "Dhaka City", "Outside Dhaka")
+        areas: JSON list of areas/districts in this zone
+        shipping_cost: Standard delivery cost for this zone
+        free_shipping_threshold: Order amount for free shipping (None = no free shipping)
+        estimated_days: Delivery time estimate (e.g., "1-2", "3-5")
+        is_active: Enable/disable zone
+        sort_order: Display order
+    """
+
+    name = models.CharField(max_length=200)
+    areas = models.JSONField(
+        default=list,
+        help_text="List of areas/districts (e.g., ['Dhaka', 'Gazipur', 'Narayanganj'])",
+    )
+    shipping_cost = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text="Delivery cost for this zone",
+    )
+    free_shipping_threshold = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Order amount for free shipping (blank = no free shipping)",
+    )
+    estimated_days = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Delivery estimate (e.g., '1-2 days', '3-5 business days')",
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = "orders_shipping_zone"
+        verbose_name = "Shipping Zone"
+        verbose_name_plural = "Shipping Zones"
+        ordering = ["sort_order", "name"]
+        indexes = [
+            models.Index(fields=["is_active", "sort_order"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} (৳{self.shipping_cost})"
+
+    @property
+    def has_free_shipping(self) -> bool:
+        """Check if zone offers free shipping."""
+        return self.free_shipping_threshold is not None
+
+    def calculate_shipping_cost(self, order_amount: float) -> float:
+        """
+        Calculate shipping cost for given order amount.
+
+        Args:
+            order_amount: Order subtotal
+
+        Returns:
+            Shipping cost (0 if free shipping applies)
+
+        Example:
+            zone = ShippingZone.objects.get(name='Dhaka City')
+            cost = zone.calculate_shipping_cost(500.00)  # Returns 0 if threshold is 500
+        """
+        if self.free_shipping_threshold and order_amount >= float(
+            self.free_shipping_threshold
+        ):
+            return 0.0
+        return float(self.shipping_cost)
+
+
+class TaxRule(TimeStampedModel):
+    """
+    Tax rule for order tax calculation.
+
+    Supports percentage and fixed tax types.
+    Multiple rules can be applied based on priority.
+
+    Attributes:
+        name: Tax name (e.g., "VAT", "Service Charge")
+        type: Tax type (percentage or fixed)
+        rate: Tax rate (percentage 0-100 or fixed amount)
+        is_active: Enable/disable rule
+        priority: Application order (lower = applied first)
+    """
+
+    TAX_TYPE_CHOICES = [
+        ("percentage", "Percentage"),
+        ("fixed", "Fixed Amount"),
+    ]
+
+    name = models.CharField(max_length=200)
+    type = models.CharField(max_length=10, choices=TAX_TYPE_CHOICES)
+    rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text="Percentage (0-100) or fixed amount",
+    )
+    is_active = models.BooleanField(default=True)
+    priority = models.IntegerField(
+        default=0, help_text="Lower priority applied first"
+    )
+
+    class Meta:
+        db_table = "orders_tax_rule"
+        verbose_name = "Tax Rule"
+        verbose_name_plural = "Tax Rules"
+        ordering = ["priority", "name"]
+        indexes = [
+            models.Index(fields=["is_active", "priority"]),
+        ]
+
+    def __str__(self) -> str:
+        if self.type == "percentage":
+            return f"{self.name} ({self.rate}%)"
+        return f"{self.name} (৳{self.rate})"
+
+    def calculate_tax(self, amount: float) -> float:
+        """
+        Calculate tax for given amount.
+
+        Args:
+            amount: Amount to calculate tax on
+
+        Returns:
+            Tax amount
+
+        Example:
+            vat = TaxRule.objects.get(name='VAT')
+            tax = vat.calculate_tax(1000.00)  # Returns 150 if rate is 15%
+        """
+        if self.type == "percentage":
+            return round(amount * (float(self.rate) / 100), 2)
+        return float(self.rate)

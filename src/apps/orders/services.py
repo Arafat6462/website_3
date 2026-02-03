@@ -1,7 +1,11 @@
 """
-Cart service - business logic for shopping cart operations.
+Orders service - business logic for cart, coupon, shipping, and tax operations.
 
-This module provides thread-safe cart operations with stock validation.
+This module provides thread-safe operations with validation:
+- CartService: Shopping cart management
+- CouponService: Coupon validation and discount calculation
+- ShippingService: Shipping cost calculation
+- TaxService: Tax calculation
 """
 
 from datetime import timedelta
@@ -644,4 +648,213 @@ class CouponService:
             eligible_items.append(item)
 
         return eligible_items
+
+
+class ShippingService:
+    """
+    Service for calculating shipping costs.
+
+    Handles:
+    - Zone detection by area
+    - Free shipping threshold
+    - Shipping cost calculation
+
+    Usage:
+        # Get zone by area
+        zone = ShippingService.get_zone_for_area('Dhaka')
+        
+        # Calculate shipping
+        cost = ShippingService.calculate_shipping(cart, 'Dhaka')
+        
+        # Check free shipping eligibility
+        is_free = ShippingService.is_free_shipping_eligible(cart, zone)
+    """
+
+    @staticmethod
+    def get_zone_for_area(area: str) -> Any | None:
+        """
+        Find shipping zone for given area.
+
+        Args:
+            area: City/area name (case-insensitive)
+
+        Returns:
+            ShippingZone instance or None if not found
+
+        Search order:
+            1. Exact match in areas list
+            2. Case-insensitive partial match
+            3. First active zone as fallback
+
+        Example:
+            zone = ShippingService.get_zone_for_area('Dhaka')
+            if zone:
+                cost = zone.calculate_shipping_cost(500.00)
+        """
+        from apps.orders.models import ShippingZone
+
+        area_lower = area.lower().strip()
+
+        # Try exact match first
+        zones = ShippingZone.objects.filter(is_active=True)
+        for zone in zones:
+            if area_lower in [a.lower().strip() for a in zone.areas]:
+                return zone
+
+        # Fallback to first active zone
+        return zones.first()
+
+    @staticmethod
+    def calculate_shipping(cart: Any, area: str) -> dict[str, Any]:
+        """
+        Calculate shipping cost for cart.
+
+        Args:
+            cart: Cart instance
+            area: Delivery area
+
+        Returns:
+            Dictionary with:
+                - zone: ShippingZone instance or None
+                - cost: Shipping cost (float)
+                - is_free: Whether free shipping applies (bool)
+                - estimated_days: Delivery estimate (str)
+                - error: Error message if zone not found (str or None)
+
+        Example:
+            result = ShippingService.calculate_shipping(cart, 'Dhaka')
+            if result['error']:
+                print(result['error'])
+            else:
+                print(f"Shipping: ৳{result['cost']} ({result['estimated_days']})")
+        """
+        zone = ShippingService.get_zone_for_area(area)
+
+        if not zone:
+            return {
+                "zone": None,
+                "cost": 0.0,
+                "is_free": False,
+                "estimated_days": "",
+                "error": f"No shipping zone found for area: {area}",
+            }
+
+        cart_subtotal = float(cart.subtotal)
+        shipping_cost = zone.calculate_shipping_cost(cart_subtotal)
+        is_free = shipping_cost == 0.0 and zone.has_free_shipping
+
+        return {
+            "zone": zone,
+            "cost": shipping_cost,
+            "is_free": is_free,
+            "estimated_days": zone.estimated_days,
+            "error": None,
+        }
+
+    @staticmethod
+    def is_free_shipping_eligible(cart: Any, zone: Any) -> bool:
+        """
+        Check if cart qualifies for free shipping.
+
+        Args:
+            cart: Cart instance
+            zone: ShippingZone instance
+
+        Returns:
+            True if free shipping applies
+
+        Example:
+            if ShippingService.is_free_shipping_eligible(cart, zone):
+                print('Free shipping!')
+        """
+        if not zone or not zone.has_free_shipping:
+            return False
+
+        return float(cart.subtotal) >= float(zone.free_shipping_threshold)
+
+
+class TaxService:
+    """
+    Service for calculating order taxes.
+
+    Handles:
+    - Multiple tax rules
+    - Priority-based application
+    - Percentage and fixed taxes
+
+    Usage:
+        # Calculate total tax
+        tax_amount = TaxService.calculate_order_tax(subtotal=1000.00)
+        
+        # Get breakdown
+        breakdown = TaxService.get_tax_breakdown(subtotal=1000.00)
+        for item in breakdown:
+            print(f"{item['name']}: ৳{item['amount']}")
+    """
+
+    @staticmethod
+    def calculate_order_tax(subtotal: float) -> float:
+        """
+        Calculate total tax for order subtotal.
+
+        Applies all active tax rules in priority order.
+
+        Args:
+            subtotal: Order subtotal amount
+
+        Returns:
+            Total tax amount
+
+        Example:
+            tax = TaxService.calculate_order_tax(1000.00)
+            total = 1000.00 + tax
+        """
+        from apps.orders.models import TaxRule
+
+        total_tax = 0.0
+
+        for rule in TaxRule.objects.filter(is_active=True):
+            total_tax += rule.calculate_tax(subtotal)
+
+        return round(total_tax, 2)
+
+    @staticmethod
+    def get_tax_breakdown(subtotal: float) -> list[dict[str, Any]]:
+        """
+        Get detailed tax breakdown.
+
+        Args:
+            subtotal: Order subtotal amount
+
+        Returns:
+            List of dictionaries with:
+                - name: Tax name
+                - type: Tax type (percentage/fixed)
+                - rate: Tax rate
+                - amount: Calculated amount
+
+        Example:
+            breakdown = TaxService.get_tax_breakdown(1000.00)
+            # Returns: [
+            #     {'name': 'VAT', 'type': 'percentage', 'rate': 15.0, 'amount': 150.0},
+            #     {'name': 'Service Charge', 'type': 'fixed', 'rate': 10.0, 'amount': 10.0}
+            # ]
+        """
+        from apps.orders.models import TaxRule
+
+        breakdown = []
+
+        for rule in TaxRule.objects.filter(is_active=True):
+            tax_amount = rule.calculate_tax(subtotal)
+            breakdown.append(
+                {
+                    "name": rule.name,
+                    "type": rule.type,
+                    "rate": float(rule.rate),
+                    "amount": tax_amount,
+                }
+            )
+
+        return breakdown
+
 

@@ -1,5 +1,5 @@
 """
-Orders Application Admin Configuration - Phase 7: Cart, Phase 8: Coupons.
+Orders Application Admin Configuration - Phase 7: Cart, Phase 8: Coupons, Phase 9: Shipping & Tax.
 """
 
 from typing import Any
@@ -10,7 +10,14 @@ from django.http import HttpRequest
 from django.utils.html import format_html
 
 from apps.core.admin import BaseModelAdmin, TimeStampedAdminMixin
-from apps.orders.models import Cart, CartItem, Coupon, CouponUsage
+from apps.orders.models import (
+    Cart,
+    CartItem,
+    Coupon,
+    CouponUsage,
+    ShippingZone,
+    TaxRule,
+)
 
 
 class CartItemInline(admin.TabularInline):
@@ -552,5 +559,221 @@ class CouponUsageAdmin(BaseModelAdmin):
     #             obj.order.order_number,
     #         )
     #     return format_html('<span style="color: gray;">Pending</span>')
+
+
+@admin.register(ShippingZone)
+class ShippingZoneAdmin(TimeStampedAdminMixin, BaseModelAdmin):
+    """
+    Admin interface for ShippingZone model.
+
+    Features:
+    - Manage shipping zones and costs
+    - Configure free shipping thresholds
+    - Set delivery estimates
+    - Drag-drop zone ordering
+    """
+
+    list_display = [
+        "name",
+        "shipping_cost_display",
+        "free_shipping_display",
+        "areas_display",
+        "estimated_days",
+        "status_badge",
+        "sort_order",
+    ]
+    list_filter = [
+        "is_active",
+        "created_at",
+    ]
+    search_fields = ["name", "areas"]
+    readonly_fields = ["created_at", "updated_at"]
+    fieldsets = [
+        (
+            "Zone Information",
+            {
+                "fields": [
+                    "name",
+                    "areas",
+                    "is_active",
+                    "sort_order",
+                ]
+            },
+        ),
+        (
+            "Shipping Configuration",
+            {
+                "fields": [
+                    "shipping_cost",
+                    "free_shipping_threshold",
+                    "estimated_days",
+                ]
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": ["created_at", "updated_at"],
+                "classes": ["collapse"],
+            },
+        ),
+    ]
+
+    @admin.display(description="Shipping Cost")
+    def shipping_cost_display(self, obj: ShippingZone) -> str:
+        """Display shipping cost."""
+        return format_html(
+            '<strong style="color: #007bff;">৳{:.2f}</strong>',
+            obj.shipping_cost,
+        )
+
+    @admin.display(description="Free Shipping")
+    def free_shipping_display(self, obj: ShippingZone) -> str:
+        """Display free shipping threshold."""
+        if obj.free_shipping_threshold:
+            return format_html(
+                '<span style="color: green;">Above ৳{:.2f}</span>',
+                obj.free_shipping_threshold,
+            )
+        return format_html('<span style="color: gray;">Not available</span>')
+
+    @admin.display(description="Areas")
+    def areas_display(self, obj: ShippingZone) -> str:
+        """Display areas count."""
+        count = len(obj.areas) if obj.areas else 0
+        if count == 0:
+            return format_html('<span style="color: red;">No areas</span>')
+        
+        areas_preview = ", ".join(obj.areas[:3])
+        if count > 3:
+            areas_preview += f"... (+{count - 3} more)"
+        
+        return format_html(
+            '<span title="{}">{} areas</span>',
+            ", ".join(obj.areas),
+            count,
+        )
+
+    @admin.display(description="Status")
+    def status_badge(self, obj: ShippingZone) -> str:
+        """Display status badge."""
+        if obj.is_active:
+            return format_html(
+                '<span style="background-color: #28a745; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">Active</span>'
+            )
+        return format_html(
+            '<span style="background-color: #6c757d; color: white; '
+            'padding: 3px 10px; border-radius: 3px;">Inactive</span>'
+        )
+
+    @admin.action(description="Activate selected zones")
+    def activate_zones(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Activate selected zones."""
+        count = queryset.update(is_active=True)
+        self.message_user(request, f"Activated {count} shipping zones.")
+
+    @admin.action(description="Deactivate selected zones")
+    def deactivate_zones(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Deactivate selected zones."""
+        count = queryset.update(is_active=False)
+        self.message_user(request, f"Deactivated {count} shipping zones.")
+
+    actions = ["activate_zones", "deactivate_zones"]
+
+
+@admin.register(TaxRule)
+class TaxRuleAdmin(TimeStampedAdminMixin, BaseModelAdmin):
+    """
+    Admin interface for TaxRule model.
+
+    Features:
+    - Manage tax rules
+    - Set priority order
+    - Percentage or fixed taxes
+    - Quick activate/deactivate
+    """
+
+    list_display = [
+        "name",
+        "tax_badge",
+        "priority",
+        "status_badge",
+        "created_at",
+    ]
+    list_filter = [
+        "type",
+        "is_active",
+        "created_at",
+    ]
+    search_fields = ["name"]
+    readonly_fields = ["created_at", "updated_at"]
+    fieldsets = [
+        (
+            "Tax Information",
+            {
+                "fields": [
+                    "name",
+                    "type",
+                    "rate",
+                    "is_active",
+                    "priority",
+                ]
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": ["created_at", "updated_at"],
+                "classes": ["collapse"],
+            },
+        ),
+    ]
+
+    @admin.display(description="Tax")
+    def tax_badge(self, obj: TaxRule) -> str:
+        """Display tax rate badge."""
+        if obj.type == "percentage":
+            return format_html(
+                '<span style="background-color: #007bff; color: white; '
+                'padding: 3px 10px; border-radius: 3px; font-weight: bold;">'
+                '{}% Tax</span>',
+                obj.rate,
+            )
+        else:
+            return format_html(
+                '<span style="background-color: #28a745; color: white; '
+                'padding: 3px 10px; border-radius: 3px; font-weight: bold;">'
+                '৳{} Tax</span>',
+                obj.rate,
+            )
+
+    @admin.display(description="Status")
+    def status_badge(self, obj: TaxRule) -> str:
+        """Display status badge."""
+        if obj.is_active:
+            return format_html(
+                '<span style="background-color: #28a745; color: white; '
+                'padding: 3px 10px; border-radius: 3px;">Active</span>'
+            )
+        return format_html(
+            '<span style="background-color: #6c757d; color: white; '
+            'padding: 3px 10px; border-radius: 3px;">Inactive</span>'
+        )
+
+    @admin.action(description="Activate selected tax rules")
+    def activate_rules(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Activate selected tax rules."""
+        count = queryset.update(is_active=True)
+        self.message_user(request, f"Activated {count} tax rules.")
+
+    @admin.action(description="Deactivate selected tax rules")
+    def deactivate_rules(self, request: HttpRequest, queryset: QuerySet) -> None:
+        """Deactivate selected tax rules."""
+        count = queryset.update(is_active=False)
+        self.message_user(request, f"Deactivated {count} tax rules.")
+
+    actions = ["activate_rules", "deactivate_rules"]
+
 
 
