@@ -23,7 +23,6 @@ References:
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -31,50 +30,24 @@ from drf_spectacular.views import (
 )
 
 
-def health_check(request) -> JsonResponse:
-    """
-    Health check endpoint for monitoring and container orchestration.
-    
-    Returns a simple JSON response indicating the service is running.
-    Used by Docker health checks and load balancers.
-    
-    Args:
-        request: The HTTP request object.
-    
-    Returns:
-        JsonResponse with status "ok" and HTTP 200.
-    
-    Example:
-        GET /api/v1/health/
-        Response: {"status": "ok", "service": "ecom-backend"}
-    """
-    return JsonResponse({
-        "status": "ok",
-        "service": "ecom-backend",
-        "version": "1.0.0",
-    })
-
-
 # =============================================================================
 # API URL Patterns (Version 1)
 # =============================================================================
 
 api_v1_patterns = [
-    # Health check
-    path("health/", health_check, name="health-check"),
+    # API root and health check (from api.v1.urls)
+    path("", include("api.v1.urls")),
     
     # API Documentation
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     
-    # App-specific URLs will be added here as we build each app
-    # path("products/", include("apps.products.urls")),
-    # path("orders/", include("apps.orders.urls")),
-    # path("users/", include("apps.users.urls")),
-    # path("auth/", include("apps.users.auth_urls")),
-    # path("cart/", include("apps.orders.cart_urls")),
-    # path("coupons/", include("apps.promotions.urls")),
-    # path("cms/", include("apps.cms.urls")),
+    # Future app URLs will be added here as we build them
+    # path("cart/", include("api.v1.cart.urls")),
+    # path("orders/", include("api.v1.orders.urls")),
+    # path("users/", include("api.v1.users.urls")),
+    # path("auth/", include("api.v1.auth.urls")),
+    # path("cms/", include("api.v1.cms.urls")),
 ]
 
 # =============================================================================

@@ -41,30 +41,37 @@ ALLOWED_HOSTS = [
 # Debug Toolbar Configuration
 # =============================================================================
 # Only installed in development for performance profiling
+# Disabled during tests
 # =============================================================================
 
-INSTALLED_APPS += ["debug_toolbar"]  # noqa: F405
+import sys
 
-MIDDLEWARE = [
-    "debug_toolbar.middleware.DebugToolbarMiddleware",
-] + MIDDLEWARE  # noqa: F405
+# Only enable debug toolbar if not running tests
+TESTING = 'test' in sys.argv
 
-# IPs allowed to see debug toolbar
-INTERNAL_IPS = [
-    "127.0.0.1",
-    "localhost",
-]
+if not TESTING:
+    INSTALLED_APPS += ["debug_toolbar"]  # noqa: F405
 
-# Docker-specific: Allow debug toolbar in Docker container
-import socket
+    MIDDLEWARE = [
+        "debug_toolbar.middleware.DebugToolbarMiddleware",
+    ] + MIDDLEWARE  # noqa: F405
 
-hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
-INTERNAL_IPS += [".".join(ip.split(".")[:-1] + ["1"]) for ip in ips]
+    # IPs allowed to see debug toolbar
+    INTERNAL_IPS = [
+        "127.0.0.1",
+        "localhost",
+    ]
 
-DEBUG_TOOLBAR_CONFIG = {
-    "SHOW_TOOLBAR_CALLBACK": lambda request: DEBUG,
-    "IS_RUNNING_TESTS": False,  # Disable debug toolbar when running tests
-}
+    # Docker-specific: Allow debug toolbar in Docker container
+    import socket
+
+    hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
+    INTERNAL_IPS += [".".join(ip.split(".")[:-1] + ["1"]) for ip in ips]
+
+    DEBUG_TOOLBAR_CONFIG = {
+        "SHOW_TOOLBAR_CALLBACK": lambda request: DEBUG,
+        "IS_RUNNING_TESTS": False,
+    }
 
 # =============================================================================
 # Email Configuration
