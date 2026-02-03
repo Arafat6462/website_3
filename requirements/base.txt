@@ -40,6 +40,7 @@ Pillow>=10.0,<11.0                  # Image processing
 # -----------------------------------------------------------------------------
 django-environ>=0.11,<1.0           # Environment variable management
 argon2-cffi>=23.1,<24.0             # Secure password hashing
+django-ratelimit>=4.1,<5.0          # Rate limiting for views
 
 # -----------------------------------------------------------------------------
 # Utilities
