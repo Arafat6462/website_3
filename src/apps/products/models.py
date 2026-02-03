@@ -1005,3 +1005,122 @@ class VariantPriceHistory(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.variant.sku}: {self.old_price} → {self.new_price}"
+
+
+# ============================================================================
+# PHASE 6: INVENTORY MANAGEMENT
+# ============================================================================
+
+
+class InventoryLog(TimeStampedModel):
+    """
+    Inventory log model - tracks all stock changes for auditing.
+
+    Every stock change is logged with:
+    - What changed (quantity)
+    - Why it changed (change_type)
+    - Who made the change (created_by)
+    - Reference to related entity (order, adjustment, etc.)
+
+    This provides complete audit trail for inventory management.
+
+    Attributes:
+        variant: The product variant whose stock changed.
+        change_type: Type of change (sold, restocked, adjustment, etc.).
+        quantity_change: How much changed (positive for increase, negative for decrease).
+        quantity_before: Stock level before change.
+        quantity_after: Stock level after change.
+        reference: Reference ID (order number, supplier invoice, etc.).
+        notes: Additional context about the change.
+        created_by: User who made the change (null for system changes).
+
+    Example:
+        # Log a sale
+        InventoryLog.objects.create(
+            variant=variant,
+            change_type='sold',
+            quantity_change=-2,
+            quantity_before=100,
+            quantity_after=98,
+            reference='ORD-2026-00123',
+            created_by=None  # System generated
+        )
+
+        # Log a restock
+        InventoryLog.objects.create(
+            variant=variant,
+            change_type='restocked',
+            quantity_change=50,
+            quantity_before=98,
+            quantity_after=148,
+            reference='PO-2026-001',
+            notes='Received from supplier',
+            created_by=admin_user
+        )
+    """
+
+    class ChangeType(models.TextChoices):
+        """Types of inventory changes."""
+
+        SOLD = "sold", "Sold (Order)"
+        RESTOCKED = "restocked", "Restocked"
+        ADJUSTMENT = "adjustment", "Manual Adjustment"
+        RETURN = "return", "Customer Return"
+        DAMAGED = "damaged", "Damaged/Lost"
+        RESERVED = "reserved", "Reserved (Pending Order)"
+        RELEASED = "released", "Released (Cancelled Order)"
+
+    variant = models.ForeignKey(
+        ProductVariant,
+        on_delete=models.CASCADE,
+        related_name="inventory_logs",
+        help_text="Variant whose stock changed",
+    )
+    change_type = models.CharField(
+        max_length=20,
+        choices=ChangeType.choices,
+        db_index=True,
+        help_text="Type of inventory change",
+    )
+    quantity_change = models.IntegerField(
+        help_text="Change in quantity (positive=increase, negative=decrease)"
+    )
+    quantity_before = models.IntegerField(
+        validators=[MinValueValidator(0)], help_text="Stock before change"
+    )
+    quantity_after = models.IntegerField(
+        validators=[MinValueValidator(0)], help_text="Stock after change"
+    )
+    reference = models.CharField(
+        max_length=255,
+        blank=True,
+        db_index=True,
+        help_text="Reference ID (order number, PO number, etc.)",
+    )
+    notes = models.TextField(blank=True, help_text="Additional context")
+    created_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_changes",
+        help_text="User who made the change (null for system)",
+    )
+
+    class Meta:
+        db_table = "products_inventorylog"
+        verbose_name = "Inventory Log"
+        verbose_name_plural = "Inventory Logs"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["variant", "-created_at"]),
+            models.Index(fields=["change_type", "-created_at"]),
+            models.Index(fields=["reference"]),
+        ]
+
+    def __str__(self) -> str:
+        sign = "+" if self.quantity_change >= 0 else ""
+        return (
+            f"{self.variant.sku}: {sign}{self.quantity_change} "
+            f"({self.quantity_before} → {self.quantity_after})"
+        )

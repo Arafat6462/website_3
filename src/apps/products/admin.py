@@ -20,7 +20,19 @@ from apps.core.admin import (
     SoftDeleteAdminMixin,
     TimeStampedAdminMixin,
 )
-from apps.products.models import Attribute, Category, ProductType, ProductTypeAttribute
+from apps.products.models import (
+    Attribute,
+    Category,
+    InventoryLog,
+    Product,
+    ProductAttributeValue,
+    ProductImage,
+    ProductType,
+    ProductTypeAttribute,
+    ProductVariant,
+    VariantAttributeValue,
+    VariantPriceHistory,
+)
 
 
 class ProductTypeAttributeInline(admin.TabularInline):
@@ -255,14 +267,6 @@ class CategoryAdmin(SoftDeleteAdminMixin, SEOAdminMixin, TimeStampedAdminMixin, 
 # PHASE 5: PRODUCTS & VARIANTS ADMIN
 # ============================================================================
 
-from apps.products.models import (
-    Product,
-    ProductAttributeValue,
-    ProductImage,
-    ProductVariant,
-    VariantAttributeValue,
-    VariantPriceHistory,
-)
 
 
 class ProductVariantInline(admin.TabularInline):
@@ -532,6 +536,24 @@ class VariantPriceHistoryInline(admin.TabularInline):
         return False
 
 
+class InventoryLogInline(admin.TabularInline):
+    """
+    Inline admin for inventory logs.
+
+    Shows stock change history for a variant (read-only).
+    """
+
+    model = InventoryLog
+    extra = 0
+    fields = ["created_at", "change_type", "quantity_change", "quantity_before", "quantity_after", "reference", "created_by"]
+    readonly_fields = ["created_at", "change_type", "quantity_change", "quantity_before", "quantity_after", "reference", "created_by"]
+    can_delete = False
+
+    def has_add_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        """Disable manual creation (use InventoryService)."""
+        return False
+
+
 @admin.register(ProductVariant)
 class ProductVariantAdmin(SoftDeleteAdminMixin, TimeStampedAdminMixin, BaseModelAdmin):
     """
@@ -542,6 +564,7 @@ class ProductVariantAdmin(SoftDeleteAdminMixin, TimeStampedAdminMixin, BaseModel
     - Bulk stock/price updates
     - Attribute value editing
     - Price history tracking
+    - Inventory log history
     """
 
     list_display = [
@@ -625,7 +648,7 @@ class ProductVariantAdmin(SoftDeleteAdminMixin, TimeStampedAdminMixin, BaseModel
             },
         ),
     ]
-    inlines = [VariantAttributeValueInline, VariantPriceHistoryInline]
+    inlines = [VariantAttributeValueInline, InventoryLogInline, VariantPriceHistoryInline]
     autocomplete_fields = ["product"]
 
     @admin.display(description="Effective Price")
@@ -698,3 +721,124 @@ class ProductImageAdmin(TimeStampedAdminMixin, BaseModelAdmin):
                 obj.image.url,
             )
         return "-"
+
+
+# ============================================================================
+# PHASE 6: INVENTORY MANAGEMENT ADMIN
+# ============================================================================
+
+
+@admin.register(InventoryLog)
+class InventoryLogAdmin(TimeStampedAdminMixin, BaseModelAdmin):
+    """
+    Admin interface for InventoryLog model.
+
+    Read-only view of all inventory changes for auditing.
+    All changes are made via InventoryService, not directly in admin.
+    """
+
+    list_display = [
+        "created_at",
+        "variant_display",
+        "change_type_badge",
+        "quantity_display",
+        "stock_levels",
+        "reference",
+        "created_by",
+    ]
+    list_filter = [
+        "change_type",
+        "created_at",
+        "variant__product__category",
+    ]
+    search_fields = [
+        "variant__sku",
+        "variant__name",
+        "variant__product__name",
+        "reference",
+        "notes",
+    ]
+    readonly_fields = [
+        "variant",
+        "change_type",
+        "quantity_change",
+        "quantity_before",
+        "quantity_after",
+        "reference",
+        "notes",
+        "created_by",
+        "created_at",
+    ]
+    autocomplete_fields = []
+    date_hierarchy = "created_at"
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Disable manual creation - use InventoryService instead."""
+        return False
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: Any = None
+    ) -> bool:
+        """Disable editing - logs are immutable."""
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: Any = None
+    ) -> bool:
+        """Disable deletion - logs are permanent."""
+        return False
+
+    @admin.display(description="Variant")
+    def variant_display(self, obj: InventoryLog) -> str:
+        """Display variant with link."""
+        return format_html(
+            '<a href="/admin/products/productvariant/{}/change/">{}</a>',
+            obj.variant.pk,
+            obj.variant.sku,
+        )
+
+    @admin.display(description="Change Type")
+    def change_type_badge(self, obj: InventoryLog) -> str:
+        """Display change type with colored badge."""
+        colors = {
+            "sold": "#dc3545",  # Red
+            "restocked": "#28a745",  # Green
+            "adjustment": "#007bff",  # Blue
+            "return": "#17a2b8",  # Cyan
+            "damaged": "#ffc107",  # Yellow
+            "reserved": "#fd7e14",  # Orange
+            "released": "#6c757d",  # Gray
+        }
+        color = colors.get(obj.change_type, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 10px; border-radius: 3px; font-size: 11px;">{}</span>',
+            color,
+            obj.get_change_type_display(),
+        )
+
+    @admin.display(description="Quantity Change")
+    def quantity_display(self, obj: InventoryLog) -> str:
+        """Display quantity change with color coding."""
+        if obj.quantity_change > 0:
+            return format_html(
+                '<span style="color: green; font-weight: bold;">+{}</span>',
+                obj.quantity_change,
+            )
+        elif obj.quantity_change < 0:
+            return format_html(
+                '<span style="color: red; font-weight: bold;">{}</span>',
+                obj.quantity_change,
+            )
+        else:
+            return "0"
+
+    @admin.display(description="Stock Levels")
+    def stock_levels(self, obj: InventoryLog) -> str:
+        """Display before → after stock levels."""
+        return format_html(
+            '<span style="color: #6c757d;">{}</span> → '
+            '<span style="font-weight: bold;">{}</span>',
+            obj.quantity_before,
+            obj.quantity_after,
+        )
