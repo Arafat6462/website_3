@@ -78,14 +78,14 @@ jobs:
               SECRET_KEY=$(openssl rand -base64 50 | tr -d '\n')
               DB_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')
               
-              cat > .env.production << 'ENVEOF'
+              cat > .env.production <<ENVEOF
             DJANGO_SETTINGS_MODULE=config.settings.production
             DEBUG=False
-            SECRET_KEY='$SECRET_KEY'
+            SECRET_KEY=${SECRET_KEY}
             ALLOWED_HOSTS=ecom.arafat2.me,165.22.217.133
             DB_NAME=ecom_prod
             DB_USER=ecom_user
-            DB_PASSWORD='$DB_PASSWORD'
+            DB_PASSWORD=${DB_PASSWORD}
             DB_HOST=db
             DB_PORT=5432
             REDIS_URL=redis://redis:6379/0
@@ -97,10 +97,6 @@ jobs:
             CSRF_COOKIE_SECURE=False
             CSRF_TRUSTED_ORIGINS=https://ecom.arafat2.me,http://165.22.217.133
             ENVEOF
-              
-              # Replace variables
-              sed -i "s|\$SECRET_KEY|$SECRET_KEY|g" .env.production
-              sed -i "s|\$DB_PASSWORD|$DB_PASSWORD|g" .env.production
             fi
             
             # Login to GitHub Container Registry
