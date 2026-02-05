@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
@@ -10,13 +8,13 @@ services:
     env_file:
       - .env.production
     environment:
-      - POSTGRES_DB=${DB_NAME}
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-ecom_prod}
+      - POSTGRES_USER=${DB_USER:-ecom_user}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 10s
-      timeout: 5s
+      timeout: 5s:-ecom_user
       retries: 5
     networks:
       - ecom_network
@@ -37,7 +35,7 @@ services:
       - ecom_network
 
   web:
-    image: ghcr.io/${GITHUB_REPOSITORY:-arafat/website_3}:latest
+    image: ghcr.io/arafat6462/website_3:latest
     container_name: ecom_web_prod
     restart: always
     command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120
