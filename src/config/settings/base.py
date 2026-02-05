@@ -292,15 +292,12 @@ REST_FRAMEWORK = {
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ],
-    # Throttling - Rate limiting for API endpoints
+    # Throttling - DISABLED FOR TESTING
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
+        # Rate limiting disabled for load testing
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "100/hour",  # Anonymous users: 100 requests per hour
-        "user": "1000/hour",  # Authenticated users: 1000 requests per hour
-        "burst": "60/minute",  # Burst rate for specific endpoints
+        # Unlimited for testing
     },
     # Schema generation
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",

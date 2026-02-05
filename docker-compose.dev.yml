@@ -93,6 +93,39 @@ services:
       retries: 3
       start_period: 40s
 
+  # ---------------------------------------------------------------------------
+  # Locust Load Testing Service
+  # ---------------------------------------------------------------------------
+  # Access UI at http://localhost:8089
+  # Start/stop independently: docker compose -f docker-compose.dev.yml up locust
+  # ---------------------------------------------------------------------------
+  locust:
+    image: locustio/locust:latest
+    container_name: ecom_locust
+    restart: "no"
+    
+    # Map locustfile from host to container
+    volumes:
+      - ./locustfile.py:/mnt/locust/locustfile.py
+    
+    # Expose Locust web UI port
+    ports:
+      - "8089:8089"
+    
+    # Run Locust in web mode, targeting Django web service
+    # Use service name 'web' as hostname (Docker DNS)
+    command: -f /mnt/locust/locustfile.py --host=http://web:8000
+    
+    # Wait for web service to be healthy before starting
+    depends_on:
+      web:
+        condition: service_healthy
+    
+    # Use Docker Compose profiles to make Locust optional
+    # Only starts when: docker compose --profile testing up
+    profiles:
+      - testing
+
 # =============================================================================
 # Named Volumes
 # =============================================================================
