@@ -42,7 +42,8 @@ class CartItemInline(admin.TabularInline):
     def line_total_display(self, obj: CartItem) -> str:
         """Display line total."""
         if obj.pk:
-            return format_html("<strong>৳{:.2f}</strong>", obj.line_total)
+            formatted_total = '৳{:.2f}'.format(float(obj.line_total))
+            return format_html("<strong>{}</strong>", formatted_total)
         return "-"
 
 
@@ -138,7 +139,8 @@ class CartAdmin(TimeStampedAdminMixin, BaseModelAdmin):
         subtotal = obj.subtotal
         if subtotal == 0:
             return format_html('<span style="color: gray;">৳0.00</span>')
-        return format_html('<strong>৳{:.2f}</strong>', subtotal)
+        formatted_subtotal = '৳{:.2f}'.format(float(subtotal))
+        return format_html('<strong>{}</strong>', formatted_subtotal)
 
     @admin.display(description="Status")
     def status_badge(self, obj: Cart) -> str:
@@ -224,7 +226,8 @@ class CartItemAdmin(TimeStampedAdminMixin, BaseModelAdmin):
     @admin.display(description="Line Total")
     def line_total_display(self, obj: CartItem) -> str:
         """Display line total."""
-        return format_html("<strong>৳{:.2f}</strong>", obj.line_total)
+        formatted_total = '৳{:.2f}'.format(float(obj.line_total))
+        return format_html("<strong>{}</strong>", formatted_total)
 
 
 class CouponUsageInline(admin.TabularInline):
@@ -548,9 +551,10 @@ class CouponUsageAdmin(BaseModelAdmin):
     @admin.display(description="Discount")
     def discount_amount_display(self, obj: CouponUsage) -> str:
         """Display discount amount."""
+        formatted_amount = '৳{:.2f}'.format(float(obj.discount_amount))
         return format_html(
-            '<strong style="color: green;">৳{:.2f}</strong>',
-            obj.discount_amount,
+            '<strong style="color: green;">{}</strong>',
+            formatted_amount,
         )
 
     # order_link method will be added in Phase 10 when Order model exists
@@ -860,6 +864,7 @@ class OrderAdmin(TimeStampedAdminMixin, BaseModelAdmin):
     readonly_fields = [
         "public_id",
         "order_number",
+        "total",  # Auto-calculated: subtotal - discount + shipping + tax
         "total_display",
         "confirmed_at",
         "shipped_at",
@@ -912,8 +917,9 @@ class OrderAdmin(TimeStampedAdminMixin, BaseModelAdmin):
                     "discount_amount",
                     "shipping_cost",
                     "tax_amount",
-                    "total_display",
-                ]
+                    "total",  # Auto-calculated (readonly)
+                ],
+                "description": "Total is auto-calculated: subtotal - discount + shipping + tax",
             },
         ),
         (
@@ -1021,9 +1027,12 @@ class OrderAdmin(TimeStampedAdminMixin, BaseModelAdmin):
     @admin.display(description="Total")
     def total_display(self, obj: Order) -> str:
         """Display order total."""
+        if obj.total is None:
+            return format_html('<span style="color: gray;">-</span>')
+        formatted_total = '৳{:.2f}'.format(float(obj.total))
         return format_html(
-            '<strong style="color: #28a745; font-size: 14px;">৳{:.2f}</strong>',
-            obj.total,
+            '<strong style="color: #28a745; font-size: 14px;">{}</strong>',
+            formatted_total,
         )
 
     @admin.action(description="Mark as Confirmed")
@@ -1165,7 +1174,8 @@ class PaymentTransactionAdmin(BaseModelAdmin):
     @admin.display(description="Amount")
     def amount_display(self, obj: PaymentTransaction) -> str:
         """Display transaction amount."""
-        return format_html('<strong>৳{:.2f}</strong>', obj.amount)
+        formatted_amount = '৳{:.2f}'.format(float(obj.amount))
+        return format_html('<strong>{}</strong>', formatted_amount)
 
     @admin.display(description="Status")
     def status_badge(self, obj: PaymentTransaction) -> str:
@@ -1272,9 +1282,10 @@ class ReturnRequestAdmin(TimeStampedAdminMixin, BaseModelAdmin):
     def refund_amount_display(self, obj: ReturnRequest) -> str:
         """Display refund amount."""
         if obj.refund_amount:
+            formatted_amount = '৳{:.2f}'.format(float(obj.refund_amount))
             return format_html(
-                '<strong style="color: #28a745;">৳{:.2f}</strong>',
-                obj.refund_amount,
+                '<strong style="color: #28a745;">{}</strong>',
+                formatted_amount,
             )
         return format_html('<span style="color: gray;">Not set</span>')
 

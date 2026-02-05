@@ -279,6 +279,10 @@ class Coupon(SoftDeleteModel):
         help_text="List of product IDs (empty = all products)",
     )
 
+    # Managers
+    objects = SoftDeleteManager()
+    all_objects = SoftDeleteAllManager()
+
     class Meta:
         db_table = "orders_coupon"
         verbose_name = "Coupon"
@@ -702,11 +706,26 @@ class Order(SoftDeleteModel):
         return f"{self.order_number} - {self.customer_name}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Generate order number on creation."""
+        """
+        Generate order number and calculate total on save.
+        
+        Auto-calculates:
+        - order_number: If not set (new order)
+        - total: subtotal - discount + shipping + tax
+        """
         if not self.order_number:
             from apps.core.utils import generate_order_number
 
             self.order_number = generate_order_number()
+        
+        # Auto-calculate total
+        self.total = (
+            self.subtotal 
+            - self.discount_amount 
+            + self.shipping_cost 
+            + self.tax_amount
+        )
+        
         super().save(*args, **kwargs)
 
     @property
