@@ -23,7 +23,8 @@ References:
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
@@ -62,9 +63,15 @@ urlpatterns = [
 # Media Files (Production & Development)
 # =============================================================================
 # Serve media files in all environments (when not using S3)
-# In production, Django serves media files since we're not using external storage
+# In production with Gunicorn, we need to use django.views.static.serve
 # =============================================================================
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+urlpatterns += [
+    re_path(
+        r'^media/(?P<path>.*)$',
+        serve,
+        {'document_root': settings.MEDIA_ROOT}
+    ),
+]
 
 # =============================================================================
 # Development-only URLs
