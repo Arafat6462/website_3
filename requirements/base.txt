@@ -55,6 +55,12 @@ gunicorn>=23.0,<24.0                # WSGI HTTP server
 whitenoise>=6.8,<7.0                # Static file serving
 
 # -----------------------------------------------------------------------------
+# Cache & Session Store
+# -----------------------------------------------------------------------------
+redis>=5.0,<6.0                     # Redis client for Django cache
+django-redis>=5.4,<6.0              # Redis cache backend for Django
+
+# -----------------------------------------------------------------------------
 # API Documentation
 # -----------------------------------------------------------------------------
 drf-spectacular>=0.27,<1.0          # OpenAPI 3.0 schema generation
