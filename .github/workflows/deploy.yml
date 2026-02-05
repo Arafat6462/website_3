@@ -59,18 +59,48 @@ jobs:
           username: ${{ secrets.DO_USERNAME }}
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
-            # Ensure directory exists
-            sudo mkdir -p /opt/ecommerce
-            sudo chown -R ${{ secrets.DO_USERNAME }}:${{ secrets.DO_USERNAME }} /opt/ecommerce
-            cd /opt/ecommerce
+            # Setup directory
+            mkdir -p ~/ecommerce
+            cd ~/ecommerce
             
             # Clone or update repository
             if [ -d ".git" ]; then
-              echo "Repository exists, pulling latest changes..."
+              echo "Pulling latest changes..."
               git pull origin master
             else
               echo "Cloning repository..."
               git clone https://github.com/${{ github.repository }}.git .
+            fi
+            
+            # Create .env.production if it doesn't exist
+            if [ ! -f ".env.production" ]; then
+              echo "Creating .env.production with auto-generated secrets..."
+              SECRET_KEY=$(openssl rand -base64 50 | tr -d '\n')
+              DB_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')
+              
+              cat > .env.production << 'ENVEOF'
+            DJANGO_SETTINGS_MODULE=config.settings.production
+            DEBUG=False
+            SECRET_KEY='$SECRET_KEY'
+            ALLOWED_HOSTS=ecom.arafat2.me,165.22.217.133
+            DB_NAME=ecom_prod
+            DB_USER=ecom_user
+            DB_PASSWORD='$DB_PASSWORD'
+            DB_HOST=db
+            DB_PORT=5432
+            REDIS_URL=redis://redis:6379/0
+            GITHUB_REPOSITORY=Arafat6462/website_3
+            USE_S3=False
+            EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+            SECURE_SSL_REDIRECT=False
+            SESSION_COOKIE_SECURE=False
+            CSRF_COOKIE_SECURE=False
+            CSRF_TRUSTED_ORIGINS=https://ecom.arafat2.me,http://165.22.217.133
+            ENVEOF
+              
+              # Replace variables
+              sed -i "s|\$SECRET_KEY|$SECRET_KEY|g" .env.production
+              sed -i "s|\$DB_PASSWORD|$DB_PASSWORD|g" .env.production
             fi
             
             # Login to GitHub Container Registry
@@ -79,17 +109,23 @@ jobs:
             # Pull latest image
             docker compose -f docker-compose.prod.yml pull web
             
+            # Start database and redis first
+            docker compose -f docker-compose.prod.yml up -d db redis
+            
+            # Wait for database
+            sleep 10
+            
             # Run migrations
             docker compose -f docker-compose.prod.yml run --rm web python manage.py migrate --noinput
             
             # Collect static files
             docker compose -f docker-compose.prod.yml run --rm web python manage.py collectstatic --noinput
             
-            # Restart services (zero-downtime)
-            docker compose -f docker-compose.prod.yml up -d --no-deps web
+            # Start web service
+            docker compose -f docker-compose.prod.yml up -d web
             
-            # Clean up old images
-            docker image prune -af
+            # Clean up
+            docker image prune -af --filter "until=24h"
       
       - name: Verify deployment
         run: |
