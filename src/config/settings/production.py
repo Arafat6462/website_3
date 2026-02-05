@@ -12,17 +12,18 @@ from .base import *
 # =============================================================================
 
 # SECURITY WARNING: Keep DEBUG false in production!
-DEBUG = False
+DEBUG = env.bool("DEBUG", default=False)
 
 # SECURITY WARNING: Set this to your actual domain in production
-ALLOWED_HOSTS = env("ALLOWED_HOSTS", default=["yourdomain.com", "www.yourdomain.com"])
+ALLOWED_HOSTS_STR = env("ALLOWED_HOSTS", default="yourdomain.com,www.yourdomain.com")
+ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(",")]
 
 # =============================================================================
 # HTTPS & SSL Settings
 # =============================================================================
 
 # Force HTTPS
-SECURE_SSL_REDIRECT = env("SECURE_SSL_REDIRECT", default=True)
+SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 
 # HSTS Settings (HTTP Strict Transport Security)
 SECURE_HSTS_SECONDS = 31536000  # 1 year
