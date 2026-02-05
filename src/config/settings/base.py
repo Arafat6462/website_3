@@ -117,6 +117,8 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     # Security middleware should be first
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise - serve static files (must be after SecurityMiddleware)
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     # Custom security logging
     "apps.core.middleware.SecurityLoggingMiddleware",
     "apps.core.middleware.SuspiciousRequestMiddleware",
