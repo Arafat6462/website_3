@@ -16,7 +16,7 @@ DEBUG = env.bool("DEBUG", default=False)
 
 # SECURITY WARNING: Set this to your actual domain in production
 # Handle both string (from env var) and list (from base.py default)
-ALLOWED_HOSTS_RAW = env("ALLOWED_HOSTS", default="yourdomain.com,www.yourdomain.com")
+ALLOWED_HOSTS_RAW = env("ALLOWED_HOSTS", default="ecom.arafat2.me,165.22.217.133,localhost")
 if isinstance(ALLOWED_HOSTS_RAW, str):
     ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_RAW.split(",")]
 else:
@@ -83,7 +83,7 @@ SECURE_REFERRER_POLICY = 'same-origin'
 # Restrict CORS to actual frontend domain
 CORS_ALLOWED_ORIGINS = env(
     "CORS_ALLOWED_ORIGINS",
-    default=["https://yourdomain.com"]
+    default=["https://ecom.arafat2.me", "http://165.22.217.133"]
 )
 
 CORS_ALLOW_CREDENTIALS = True
@@ -91,7 +91,7 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF trusted origins for your actual domain
 CSRF_TRUSTED_ORIGINS = env(
     "CSRF_TRUSTED_ORIGINS",
-    default=["https://yourdomain.com", "https://www.yourdomain.com"]
+    default=["https://ecom.arafat2.me", "http://165.22.217.133"]
 )
 
 # =============================================================================
