@@ -15,8 +15,12 @@ from .base import *
 DEBUG = env.bool("DEBUG", default=False)
 
 # SECURITY WARNING: Set this to your actual domain in production
-ALLOWED_HOSTS_STR = env("ALLOWED_HOSTS", default="yourdomain.com,www.yourdomain.com")
-ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(",")]
+# Handle both string (from env var) and list (from base.py default)
+ALLOWED_HOSTS_RAW = env("ALLOWED_HOSTS", default="yourdomain.com,www.yourdomain.com")
+if isinstance(ALLOWED_HOSTS_RAW, str):
+    ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_RAW.split(",")]
+else:
+    ALLOWED_HOSTS = ALLOWED_HOSTS_RAW
 
 # =============================================================================
 # HTTPS & SSL Settings
