@@ -56,9 +56,9 @@ COPY --from=builder /opt/venv /opt/venv
 # Create app user (non-root for security)
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Create directories
-RUN mkdir -p /app /var/log/django && \
-    chown -R appuser:appuser /app /var/log/django
+# Create directories with proper ownership
+RUN mkdir -p /app /app/media /app/staticfiles /var/log/django && \
+    chown -R appuser:appuser /app /app/media /app/staticfiles /var/log/django
 
 # Set working directory
 WORKDIR /app

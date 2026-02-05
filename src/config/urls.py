@@ -59,15 +59,20 @@ urlpatterns = [
 ]
 
 # =============================================================================
+# Media Files (Production & Development)
+# =============================================================================
+# Serve media files in all environments (when not using S3)
+# In production, Django serves media files since we're not using external storage
+# =============================================================================
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# =============================================================================
 # Development-only URLs
 # =============================================================================
 # These URLs are only available when DEBUG=True
 # =============================================================================
 
 if settings.DEBUG:
-    # Serve media files in development
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-    
     # Serve static files in development (usually handled by runserver automatically)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     
