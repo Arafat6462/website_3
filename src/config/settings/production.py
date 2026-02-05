@@ -242,10 +242,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # django-ratelimit uses cache backend
 CACHES = {
     "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": env("REDIS_URL", default="redis://redis:6379/0"),
         "OPTIONS": {
-            "CLIENT_CLASS": "django.core.cache.cache.RedisClientClass",
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
         "KEY_PREFIX": "ecom",
         "TIMEOUT": 300,
